@@ -1,0 +1,12 @@
+@import "tailwindcss";
+
+:root {
+  --pact-ink: #101418;
+  --pact-paper: #f6f4ec;
+  --pact-accent: #2f6b4f;
+}
+
+body {
+  background: var(--pact-paper);
+  color: var(--pact-ink);
+}

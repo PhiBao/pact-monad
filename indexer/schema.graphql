@@ -1,0 +1,20 @@
+type Pot @entity {
+  id: ID!
+  title: String!
+  organizer: String!
+  payee: String!
+  token: String!
+  perPerson: BigInt!
+  partySize: BigInt!
+  deadline: BigInt!
+  commitCount: BigInt!
+  state: String! # Open | Tilted | Refunding
+  total: BigInt
+}
+
+type Commitment @entity {
+  id: ID! # pot-user
+  pot: Pot!
+  user: String!
+  index: BigInt!
+}

@@ -1,0 +1,30 @@
+# Envio HyperIndex for Pact on Monad.
+# Fill FACTORY_ADDRESS + START_BLOCK after testnet deploy, then:
+#   pnpm dlx @envio-dev/hyperindex-cli init  (or deploy this dir via Envio Cloud)
+name: pact
+description: Conditional group pots — created, committed, tilted, refunded.
+networks:
+  - id: 10143 # Monad testnet
+    start_block: 63354945
+    contracts:
+      - name: PactFactory
+        address:
+          - "0x4f6aD063f1c20D53a4ea4FA1ba46A8783C782D16"
+  - id: 143 # Monad mainnet
+    start_block: 105647209
+    contracts:
+      - name: PactFactory
+        address:
+          - "0xEF673BDac2C86506874919b1ad05Bd7D7fa64344"
+        events:
+          - event: PotCreated(address indexed pot, address indexed organizer, address indexed payee, address token, uint256 perPerson, uint256 partySize, uint256 deadline, string title)
+      - name: PactPot
+        # Pots are EIP-1167 clones; register dynamically from PotCreated.
+        # If Envio dynamic-contract registration is unavailable, add pot
+        # addresses here after creation (demo scale: a handful of pots).
+        address: []
+        events:
+          - event: Committed(address indexed pot, address indexed user, uint256 index)
+          - event: Tilted(address indexed pot, uint256 total)
+          - event: RefundingOpened(address indexed pot)
+          - event: Refunded(address indexed pot, address indexed user, uint256 amount)

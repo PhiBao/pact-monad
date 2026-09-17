@@ -1,0 +1,8 @@
+.env
+.env*.local
+node_modules/
+app/.next/
+app/out/
+contracts/broadcast/
+contracts/cache/
+contracts/out/
