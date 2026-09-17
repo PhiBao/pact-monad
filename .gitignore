@@ -6,3 +6,4 @@ app/out/
 contracts/broadcast/
 contracts/cache/
 contracts/out/
+.vercel
