@@ -186,16 +186,16 @@ export default function PotPage({ params }: { params: Promise<{ address: string 
         {!viewer ? (
           <div className="grid gap-4">
             <PasskeyConnect onChange={setMeraAddr} />
-            {dynamicEnabled && <DynamicLogin />}
-            <div className="flex items-center gap-2 text-sm text-gray-500">
-              <span className="h-px flex-1 bg-gray-200" /> or <span className="h-px flex-1 bg-gray-200" />
-            </div>
-            <button
-              onClick={() => connect({ connector: connectors[0] })}
-              className="rounded-xl border px-6 py-3 font-semibold"
-            >
-              Use a wallet app
-            </button>
+            {dynamicEnabled ? (
+              <DynamicLogin />
+            ) : (
+              <button
+                onClick={() => connect({ connector: connectors[0] })}
+                className="rounded-xl border px-6 py-3 font-semibold"
+              >
+                Use a wallet app
+              </button>
+            )}
           </div>
         ) : state === 0 && !full && !expired ? (
           myCommitted ? (

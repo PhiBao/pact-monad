@@ -123,13 +123,16 @@ export default function Home() {
       {!isConnected && !meraAddr ? (
         <div className="mt-6 grid max-w-sm gap-3">
           <PasskeyConnect onChange={setMeraAddr} />
-          {dynamicEnabled && <DynamicLogin />}
-          <button
-            onClick={() => connect({ connector: connectors[0] })}
-            className="rounded-xl border px-6 py-3 font-semibold"
-          >
-            Use a wallet app instead
-          </button>
+          {dynamicEnabled ? (
+            <DynamicLogin />
+          ) : (
+            <button
+              onClick={() => connect({ connector: connectors[0] })}
+              className="rounded-xl border px-6 py-3 font-semibold"
+            >
+              Use a wallet app instead
+            </button>
+          )}
         </div>
       ) : (
         <section className="mt-8 rounded-2xl border bg-white p-6 shadow-sm">
