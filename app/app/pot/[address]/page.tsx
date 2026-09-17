@@ -3,6 +3,7 @@
 import { use, useEffect, useState } from "react";
 import PasskeyConnect from "../../../components/PasskeyConnect";
 import SessionBar from "../../../components/SessionBar";
+import { ChainGuard, useWrongChain } from "../../../components/ChainGuard";
 import DynamicLogin from "../../../components/DynamicLogin";
 import { dynamicEnabled } from "../../../lib/wagmi";
 import { passkeyApprove, passkeyCommit, passkeyCall } from "../../../lib/pactWrite";
@@ -80,6 +81,8 @@ export default function PotPage({ params }: { params: Promise<{ address: string 
   const { data, refetch } = usePot(pot);
   const [meraAddr, setMeraAddr] = useState<string | null>(null);
   const viewer = (me ?? meraAddr) as `0x${string}` | undefined;
+  const wrongChain = useWrongChain();
+  const gating = !!me && wrongChain; // wagmi txs would land on the wrong network
 
   const { writeContract, data: hash, isPending, error, reset } = useWriteContract();
   const [pkHash, setPkHash] = useState<`0x${string}` | undefined>();
@@ -187,7 +190,12 @@ export default function PotPage({ params }: { params: Promise<{ address: string 
 
       {/* Actions */}
       <div className="mt-4 rounded-2xl border bg-white p-6 shadow-sm">
-        {!viewer ? (
+        <ChainGuard />
+        {gating ? (
+          <p className="mt-2 text-sm font-semibold text-amber-800">
+            Switch network above to commit, release, or refund.
+          </p>
+        ) : !viewer ? (
           <div className="grid gap-4">
             <PasskeyConnect onChange={setMeraAddr} />
             {dynamicEnabled ? (

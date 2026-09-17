@@ -17,6 +17,7 @@ import { factoryAbi, potAbi } from "../lib/abi";
 import PasskeyConnect from "../components/PasskeyConnect";
 import DynamicLogin from "../components/DynamicLogin";
 import SessionBar from "../components/SessionBar";
+import { ChainGuard, useWrongChain } from "../components/ChainGuard";
 import { dynamicEnabled } from "../lib/wagmi";
 import { parsePotText, type PotProposal } from "../lib/assist";
 import { potFromReceipt } from "../lib/potFromReceipt";
@@ -64,6 +65,7 @@ export default function Home() {
   const [meraAddr, setMeraAddr] = useState<string | null>(null);
   const [redirecting, setRedirecting] = useState(false);
   const [createFallback, setCreateFallback] = useState<string | null>(null);
+  const wrongChain = useWrongChain();
   const { data: receipt } = useWaitForTransactionReceipt({ hash: hash ?? pkHash });
 
   // Creation confirmed → take the organizer straight to their pot.
@@ -184,6 +186,9 @@ export default function Home() {
               </p>
             )}
           </div>
+          <div className="mt-4">
+            <ChainGuard />
+          </div>
           <div className="mt-4 grid gap-3">
             <label className="grid gap-1 text-sm">
               Pot name
@@ -244,10 +249,11 @@ export default function Home() {
             </label>
             <button
               onClick={create}
-              disabled={isPending || pkBusy}
+              disabled={isPending || pkBusy || wrongChain}
+              title={wrongChain ? "Switch network first" : undefined}
               className="mt-2 rounded-xl bg-emerald-900 px-6 py-3 font-semibold text-white disabled:opacity-50"
             >
-              {isPending || pkBusy ? "Creating…" : "Create pot"}
+              {isPending || pkBusy ? "Creating…" : wrongChain ? "Switch network to create" : "Create pot"}
             </button>
             {error && <p className="text-sm text-red-700">{error.message.slice(0, 200)}</p>}
             {pkErr && <p className="text-sm text-red-700">{pkErr}</p>}
