@@ -2,6 +2,8 @@
 
 Conditional group pots on Monad. Track: **Consumer Products & Payments**.
 
+Live: **https://pact-beta.vercel.app** · Repo: **PhiBao/pact-monad** (MIT).
+
 **Problem.** The informal organizer fronts the Airbnb, the dinner bill, the gift —
 then chases friends across 4 Venmo reminders. Half pay late, some never do.
 
