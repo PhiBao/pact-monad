@@ -1,83 +1,151 @@
 # Pact — money only moves if the group means it
 
-Conditional group pots on Monad. Track: **Consumer Products & Payments**.
+**Live: https://pact-beta.vercel.app** · Track: **Consumer Products & Payments**
+(Metropolis hackathon, Monad) · License: MIT.
 
-Live: **https://pact-beta.vercel.app** · Repo: **PhiBao/pact-monad** (MIT).
+## Thesis
 
-**Problem.** The informal organizer fronts the Airbnb, the dinner bill, the gift —
-then chases friends across 4 Venmo reminders. Half pay late, some never do.
+**Problem.** Every informal organizer knows the script: you front the Airbnb, the
+dinner bill, the group gift — then spend two weeks chasing friends across Venmo
+requests. Half pay late, some never do, and asking a fourth time makes *you* the
+bad guy. Splitwise records the debt after the fact. WeTravel/SquadTrip are built
+for professional tour operators, with custodial holds and weeks-long payouts —
+overkill for six friends. Crowdtilt proved people *want* threshold-based group
+funding (it peaked near a $400M valuation), but custodial cards and Venmo killed it.
 
-**Product.** Start a pot (amount/person, group size, deadline), share the link.
-Friends join with **Face ID** (Mera passkey, no seed phrase) and commit their share
-into non-custodial escrow. If the group fills before the deadline → organizer is
-paid automatically (**TILTED**). If not → everyone claims a refund. **No tilt, no charge.**
+**What.** Pact turns an informal promise ("yeah, I'm in") into **programmable
+group intent**: the organizer names a rule — *$X each, N people, by Friday* — and
+shares a link. Contributions lock in non-custodial escrow. Hit the rule and the
+organizer is paid automatically (**TILTED**). Miss it and everyone claims a
+refund. **No tilt, no charge.**
 
-## Why Monad (genuine advantage, not sticker)
+**Why.** The failure isn't splitting — it's *commitment*. Pact answers "will
+everyone actually pay?" *before* anyone is exposed, instead of documenting the
+answer afterward.
 
-- 400ms blocks / 600ms finality: commits appear instantly — the live progress bar
-  is the social-pressure engine.
-- ~$0.0001 actions: $5–$50 micro-commits are viable (impossible on L1 gas).
-- P256 precompile + Mera: FaceID EOAs, no contracts/bundlers, portable via BIP-44.
-- AUSD (LayerZero OFT, native on Monad): dollar-denominated pots; cross-chain
-  contributors bring the same dollar.
-- Envio HyperSync/HyperIndex: realtime pot feed (`indexer/`).
+**How (user flow).**
+1. Organizer types one sentence *("cabin weekend, 6 of us, $80 each, by Friday")*
+   → the form drafts itself → confirms → shares the link in the group chat.
+2. Friends open the link, join with **Face ID** (no seed phrase, no app to
+   install), see live faces + progress, and commit in one tap.
+3. The progress bar *is* the reminder — social pressure replaces the awkward
+   fourth text. Tilt → payout. Miss → one-tap refunds.
 
-## Repo
+**Why now.** Three things converged: Monad makes $5–$50 conditional commits
+economical (~$0.0001 actions, 600ms finality); passkeys (Mera) remove seed
+phrases for normies; dollar stablecoins (AUSD, native OFT on Monad) remove
+volatility from the conversation.
 
-- `contracts/` — `PactFactory` (EIP-1167 clone factory, 1% default fee, capped 5%)
-  + `PactPot` (commit / release / expire / refund, pull-pattern refunds,
-  ReentrancyGuard, no organizer pre-tilt withdraw). `forge test`: 7/7 green.
-- `app/` — Next.js 15 PWA (pnpm, TypeScript, viem/wagmi). FaceID via
-  `@category-labs/mera` + direct viem write path; wallet-app fallback via wagmi.
-- `indexer/` — Envio config + schema (factory wired for testnet 10143 + mainnet 143).
-- `app/app/api/assist/` — TypeSafe (Jev) judgments, server-side: `parse` turns one
-  sentence into a pot draft (Choice: occasion/currency/deadline; regex in code for
-  amounts; confidence-gated review flags), `score` returns a legitimacy Noul for
-  the feed badge. Verified live: "cabin weekend…" → trip/3d/80/6; giveaway scam → p=0.01.
+## Why Monad (genuine advantage, not a sticker)
 
-## Deployed (Sourcify `exact_match` both chains)
+- **Realtime social loop:** 400ms blocks mean commits land in under a second —
+  the live progress bar that pressures the last two friends only works on fast
+  finality.
+- **Micro-escrow economics:** conditional $10 shares are viable at ~$0.0001 per
+  action; on L1 gas they never were.
+- **P256 precompile + Mera:** FaceID EOAs with zero contracts, bundlers, or
+  custody backend.
+- **AUSD (LayerZero OFT):** dollar-denominated pots; cross-chain friends bring
+  the same dollar.
+- **Envio HyperSync/HyperIndex:** realtime pot feed without running indexers
+  (`indexer/`).
 
-Factory (v2: onchain fee, pot titles) — testnet
-`0x4f6aD063f1c20D53a4ea4FA1ba46A8783C782D16`, mainnet
-`0xEF673BDac2C86506874919b1ad05Bd7D7fa64344`, both Sourcify `exact_match`.
-Live pots: testnet "Cabin weekend" + "Demo night out"
-(`0xD727…960307`, 3×0.5 MON — use for the demo tilt).
+## Architecture
 
-## Run
+```
+app/            Next.js 16 PWA (pnpm, TypeScript, viem/wagmi)
+  lib/mera.ts       Mera passkey → deterministic EOA (BIP-39/44)
+  lib/pactWrite.ts  direct viem write path for passkey sessions
+  lib/wagmi.tsx     wagmi + Dynamic embedded-wallet sync
+  app/api/assist/   TypeSafe (Jev) judgments, server-side only
+contracts/      PactFactory (EIP-1167 clones) + PactPot (escrow)
+indexer/        Envio config + GraphQL schema
+```
+
+## Contracts (Sourcify `exact_match`, both chains)
+
+| Chain | Factory (v2) |
+|---|---|
+| Monad mainnet (143) | `0xEF673BDac2C86506874919b1ad05Bd7D7fa64344` |
+| Monad testnet (10143) | `0x4f6aD063f1c20D53a4ea4FA1ba46A8783C782D16` |
+
+State machine: `commit()` → full? `release()` (permissionless, pays organizer) :
+deadline passes? `expire()` → `refund()` (pull pattern, per contributor).
+Security properties, all covered by `forge test` (**9/9 green**): one commit per
+address; organizer cannot touch funds pre-tilt; **fee (1%, capped 5%) is read from
+the factory onchain — callers cannot waive it**; ReentrancyGuard + checks-effects
+throughout; pot titles capped at 120 bytes.
+
+## Intelligence (TypeSafe, not hype)
+
+Two narrow Jev judgments where semantics genuinely beat code; everything else
+stays deterministic:
+
+- **`POST /api/assist/parse`** — one sentence → structured draft. Closed sets
+  (occasion, currency, deadline window) go to Jev as Choice questions; amounts
+  and headcounts are extracted by regex in code; per-field confidence decides
+  autofill vs. "please check" flags. Verified live: *"cabin weekend, 6 of us,
+  $80 each, by Friday"* → trip / 3-day / 80 / 6.
+- **`POST /api/assist/score`** — legitimacy Noul shown as a feed badge (cached
+  per pot). Verified live: real pot → 0.76 "looks good"; *"FREE GIVEAWAY send 1
+  MON get 10 back"* → **0.01** "check details".
+
+API keys stay server-side; both routes degrade gracefully and the manual form is
+always the source of truth.
+
+## Auth (three paths, one pot)
+
+1. **Face ID** — Mera passkeys, no seed phrase.
+2. **Log in** — Dynamic modal: email, Google, or 580+ wallets → embedded wallet
+   synced into wagmi.
+3. **Wallet app** — injected fallback when Dynamic is unconfigured.
+
+## Vision & roadmap
+
+Pact starts as the commitment layer for informal groups and grows into group
+treasury infrastructure:
+
+- **Now (hackathon):** MON pots, FaceID + email login, tilt/refund, live demo.
+- **Next:** AUSD pots (cross-border groups, no volatility); recurring pots
+  (club dues, rent splits); organizer reputation; Envio-powered public feed with
+  legitimacy badges; laggard nudges.
+- **Later:** creator payouts (fans tilt a project into existence); event stake
+  pots (Kickback-style attendance, same escrow); agent payers (AI agents commit
+  to pots via ERC-8004 identity + the same contracts).
+
+**Business model:** 1% fee on tilted pots (onchain, capped at 5%), free under a
+threshold; pro tier for clubs/creators (recurring pots, custom branding,
+analytics). Contra charges 0% and monetizes elsewhere; WeTravel takes cuts plus
+holds — Pact is cheaper *and* non-custodial.
+
+## Bounty alignment
+
+Mera UX + One-Passkey-Many-Keys (FaceID flow) · Dynamic (embedded wallets) ·
+Envio (indexer) · Agora (AUSD pots) · MetaMask/Nansen-compatible (standard
+wagmi + explorer-verified contracts).
+
+## Run locally
 
 ```bash
-# contracts
-cd contracts && forge test
-
-# app (needs NEXT_PUBLIC_FACTORY_ADDRESS; NEXT_PUBLIC_CHAIN=testnet|mainnet)
-cd app && pnpm install && pnpm dev
+cd contracts && forge test                      # 9/9
+cd app && pnpm install && pnpm dev              # needs env below
 ```
+
+Env (names only — values in `.env.local`, never committed):
+
+| Var | Scope | Purpose |
+|---|---|---|
+| `NEXT_PUBLIC_CHAIN` | public | `testnet` or `mainnet` |
+| `NEXT_PUBLIC_FACTORY_ADDRESS` | public | factory for the active chain (see table) |
+| `NEXT_PUBLIC_AUSD_ADDRESS` | public | stablecoin for dollar pots |
+| `NEXT_PUBLIC_DYNAMIC_ENV_ID` | public identifier | Dynamic login (abuse controlled by dashboard allowlists, not secrecy) |
+| `TYPESAFE_API_KEY` | **server secret** | assist routes; never `NEXT_PUBLIC_` |
+
+Vercel: Root Directory `app`, push-to-main auto-deploys.
 
 ## Demo (3 min)
 
-1. "Who fronted a trip and got ghosted?" 2. Organizer creates 3×0.5 MON pot,
-   shares link. 3. Two phones FaceID-commit live (<1s each). 4. Third commits →
-   TILTED + release tx on explorer. 5. Second pot expires → refund claimed live.
+1. "Who fronted a trip and got ghosted?" 2. Type one sentence → form drafts
+   itself → create + share link. 3. Two phones FaceID-commit live. 4. Third
+   commits → **TILTED** + explorer tx. 5. Expired pot → refund claimed live.
    6. "Splitwise records debt. Pact prevents it."
-
-## Bounty stack
-
-Mera UX + One-Passkey-Many-Keys · Dynamic (email/social embedded wallets) ·
-Envio · Agora (AUSD pots).
-
-## Auth paths (all three live)
-
-1. **Face ID** — Mera passkey EOAs, no seed phrase (`lib/mera.ts` + `lib/pactWrite.ts`).
-2. **Email/social** — Dynamic embedded wallets synced into wagmi
-   (`lib/wagmi.tsx`, `components/DynamicLogin.tsx`). Dashboard must have:
-   Monad 143 + 10143 enabled under Chains & Networks; email/social sign-in on;
-   Embedded Wallets on; CORS allowlist includes localhost + the Vercel URL.
-3. **Wallet app** — injected connector fallback.
-
-## Deploy (Vercel)
-
-Root is gitignored for secrets (`.env` never committed). Push to GitHub, import
-`app/` as a Next.js project, set env: `NEXT_PUBLIC_CHAIN=testnet`,
-`NEXT_PUBLIC_FACTORY_ADDRESS=0x6792E51FBD24f9315282BD5b6c5E713dCc779C69`,
-`NEXT_PUBLIC_DYNAMIC_ENV_ID=a8d97ee6-984e-48df-9de3-61a68f14ed55`,
-`TYPESAFE_API_KEY` (server-only), `NEXT_PUBLIC_AUSD_ADDRESS` when used.
