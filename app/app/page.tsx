@@ -1,21 +1,25 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   useAccount,
   useConnect,
+  usePublicClient,
   useReadContract,
+  useReadContracts,
   useWriteContract,
   useWaitForTransactionReceipt,
 } from "wagmi";
-import { parseEther } from "viem";
-import { factoryAddress, ausdAddress } from "../lib/monad";
-import { factoryAbi } from "../lib/abi";
+import { parseAbiItem, parseEther } from "viem";
+import { factoryAddress, ausdAddress, factoryDeployBlock } from "../lib/monad";
+import { factoryAbi, potAbi } from "../lib/abi";
 import PasskeyConnect from "../components/PasskeyConnect";
 import DynamicLogin from "../components/DynamicLogin";
+import SessionBar from "../components/SessionBar";
 import { dynamicEnabled } from "../lib/wagmi";
 import { parsePotText, type PotProposal } from "../lib/assist";
+import { potFromReceipt } from "../lib/potFromReceipt";
 
 const ZERO = "0x0000000000000000000000000000000000000000" as const;
 
@@ -58,7 +62,22 @@ export default function Home() {
   const [pkBusy, setPkBusy] = useState(false);
   const [pkErr, setPkErr] = useState<string | null>(null);
   const [meraAddr, setMeraAddr] = useState<string | null>(null);
-  const { isSuccess } = useWaitForTransactionReceipt({ hash: hash ?? pkHash });
+  const [redirecting, setRedirecting] = useState(false);
+  const [createFallback, setCreateFallback] = useState<string | null>(null);
+  const { data: receipt } = useWaitForTransactionReceipt({ hash: hash ?? pkHash });
+
+  // Creation confirmed → take the organizer straight to their pot.
+  useEffect(() => {
+    if (!receipt || !factory) return;
+    const pot = potFromReceipt(receipt, factory);
+    if (pot) {
+      setRedirecting(true);
+      router.push(`/pot/${pot}`);
+    } else {
+      setCreateFallback(hash ?? pkHash ?? null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [receipt]);
 
   const { data: potCount } = useReadContract({
     address: factory ?? undefined,
@@ -232,9 +251,14 @@ export default function Home() {
             </button>
             {error && <p className="text-sm text-red-700">{error.message.slice(0, 200)}</p>}
             {pkErr && <p className="text-sm text-red-700">{pkErr}</p>}
-            {isSuccess && (
+            {(isPending || pkBusy || redirecting) && !createFallback && (
               <p className="text-sm text-emerald-800">
-                Created! Find your pot in recent pots below (tx {hash?.slice(0, 10)}…).
+                {redirecting ? "Taking you to your pot…" : "Creating…"}
+              </p>
+            )}
+            {createFallback && (
+              <p className="text-sm text-emerald-800">
+                Created! Open your pot in recent pots below (tx {createFallback.slice(0, 10)}…).
               </p>
             )}
           </div>
@@ -242,12 +266,54 @@ export default function Home() {
       )}
 
       <section className="mt-10">
+        <YourPots factory={factory} viewer={(address ?? meraAddr) as `0x${string}` | undefined} />
+      </section>
+
+      <section className="mt-8">
         <h2 className="text-xl font-bold">
           Recent pots {potCount !== undefined ? `(${potCount.toString()})` : ""}
         </h2>
         <RecentPots factory={factory} count={potCount} onOpen={(a) => router.push(`/pot/${a}`)} />
       </section>
     </main>
+  );
+}
+
+/** Pots organized by the connected wallet (via PotCreated event scan). */
+function YourPots({
+  factory,
+  viewer,
+}: {
+  factory: `0x${string}`;
+  viewer: `0x${string}` | undefined;
+}) {
+  const client = usePublicClient();
+  const [mine, setMine] = useState<string[]>([]);
+  useEffect(() => {
+    if (!client || !factory || !viewer) {
+      setMine([]);
+      return;
+    }
+    client
+      .getLogs({
+        address: factory,
+        event: parseAbiItem(
+          "event PotCreated(address indexed pot, address indexed organizer, address indexed payee, address token, uint256 perPerson, uint256 partySize, uint256 deadline, string title)"
+        ),
+        args: { organizer: viewer },
+        fromBlock: factoryDeployBlock(),
+      })
+      .then((ls) =>
+        setMine([...new Set(ls.map((l) => (l.args as unknown as { pot: string }).pot))].reverse())
+      )
+      .catch(() => setMine([]));
+  }, [client, factory, viewer]);
+  if (!viewer || mine.length === 0) return null;
+  return (
+    <>
+      <h2 className="text-xl font-bold">Your pots ({mine.length})</h2>
+      <PotCards factory={factory} addrs={mine} />
+    </>
   );
 }
 
@@ -261,41 +327,89 @@ function RecentPots({
   onOpen: (a: string) => void;
 }) {
   const n = count === undefined ? 0 : Number(count);
-  const start = Math.max(0, n - 10);
-  const idx = Array.from({ length: n - start }, (_, i) => BigInt(start + i)).reverse();
+  const [addrs, setAddrs] = useState<string[]>([]);
+  const client = usePublicClient();
+  useEffect(() => {
+    if (!client || !factory || n === 0) {
+      setAddrs([]);
+      return;
+    }
+    const start = Math.max(0, n - 10);
+    const idx = Array.from({ length: n - start }, (_, i) => BigInt(start + i));
+    Promise.all(
+      idx.map((i) => client.readContract({ address: factory, abi: factoryAbi, functionName: "allPots", args: [i] }))
+    )
+      .then((a) => setAddrs((a as string[]).reverse()))
+      .catch(() => setAddrs([]));
+  }, [client, factory, n]);
   if (n === 0) return <p className="mt-2 text-sm">No pots yet — start the first one.</p>;
+  return <PotCards factory={factory} addrs={addrs} onOpen={onOpen} />;
+}
+
+/** Titled cards with live progress. Global scope — "Your pots" filters above. */
+function PotCards({
+  factory,
+  addrs,
+  onOpen,
+}: {
+  factory: `0x${string}`;
+  addrs: string[];
+  onOpen?: (a: string) => void;
+}) {
+  void factory;
+  if (addrs.length === 0) return <p className="mt-2 text-sm">Loading…</p>;
   return (
     <ul className="mt-3 grid gap-2">
-      {idx.map((i) => (
-        <PotRow key={i.toString()} factory={factory} index={i} onOpen={onOpen} />
+      {addrs.map((a) => (
+        <PotCard key={a} pot={a as `0x${string}`} onOpen={onOpen} />
       ))}
     </ul>
   );
 }
 
-function PotRow({
-  factory,
-  index,
-  onOpen,
-}: {
-  factory: `0x${string}`;
-  index: bigint;
-  onOpen: (a: string) => void;
-}) {
-  const { data } = useReadContract({
-    address: factory,
-    abi: factoryAbi,
-    functionName: "allPots",
-    args: [index],
+function PotCard({ pot, onOpen }: { pot: `0x${string}`; onOpen?: (a: string) => void }) {
+  const router = useRouter();
+  const open = onOpen ?? ((a: string) => router.push(`/pot/${a}`));
+  const { data } = useReadContracts({
+    contracts: [
+      { address: pot, abi: potAbi, functionName: "title" },
+      { address: pot, abi: potAbi, functionName: "commitCount" },
+      { address: pot, abi: potAbi, functionName: "partySize" },
+      { address: pot, abi: potAbi, functionName: "state" },
+    ],
   });
-  if (!data) return null;
+  const [title, count, size, state] = (data?.map((d) => d.result) ?? []) as [
+    string | undefined,
+    bigint | undefined,
+    bigint | undefined,
+    number | undefined,
+  ];
+  const pct =
+    count !== undefined && size !== undefined && size > 0n
+      ? `${(Number(count) / Number(size)) * 100}%`
+      : "0%";
   return (
     <li>
       <button
-        onClick={() => onOpen(data as string)}
-        className="w-full rounded-xl border bg-white px-4 py-3 text-left font-mono text-sm shadow-sm hover:border-emerald-900"
+        onClick={() => open(pot)}
+        className="w-full rounded-xl border bg-white px-4 py-3 text-left shadow-sm hover:border-emerald-900"
       >
-        {data as string}
+        <span className="flex items-center justify-between gap-2">
+          <strong>{title ?? "Loading…"}</strong>
+          {state === 1 && <span>🎉</span>}
+          {state === 2 && <span className="text-xs text-gray-500">refunding</span>}
+        </span>
+        {count !== undefined && size !== undefined && (
+          <>
+            <span className="text-sm text-gray-600">
+              {count.toString()}/{size.toString()} committed
+            </span>
+            <span className="mt-1 block h-2 overflow-hidden rounded-full bg-gray-200">
+              <span className="block h-full rounded-full bg-emerald-700" style={{ width: pct }} />
+            </span>
+          </>
+        )}
+        <span className="mt-1 block font-mono text-[11px] text-gray-400">{pot}</span>
       </button>
     </li>
   );

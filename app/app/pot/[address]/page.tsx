@@ -2,6 +2,7 @@
 
 import { use, useEffect, useState } from "react";
 import PasskeyConnect from "../../../components/PasskeyConnect";
+import SessionBar from "../../../components/SessionBar";
 import DynamicLogin from "../../../components/DynamicLogin";
 import { dynamicEnabled } from "../../../lib/wagmi";
 import { passkeyApprove, passkeyCommit, passkeyCall } from "../../../lib/pactWrite";
@@ -126,9 +127,12 @@ export default function PotPage({ params }: { params: Promise<{ address: string 
 
   return (
     <main className="mx-auto max-w-2xl px-6 py-12">
-      <a href="/" className="text-sm underline">
-        ← all pots
-      </a>
+      <div className="flex items-center justify-between">
+        <a href="/" className="text-sm underline">
+          ← all pots
+        </a>
+        <SessionBar meraAddr={meraAddr} onMeraSignOut={() => setMeraAddr(null)} />
+      </div>
       <h1 className="mt-2 text-3xl font-black">{potTitle || "Untitled pot"}</h1>
       <p className="font-mono text-xs text-gray-500 break-all">{pot}</p>
       <p className="mt-1 text-sm">

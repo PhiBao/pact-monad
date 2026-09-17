@@ -33,6 +33,11 @@ export function factoryAddress(): `0x${string}` | null {
   return a && a.startsWith("0x") ? (a as `0x${string}`) : null;
 }
 
+/** Factory deployment block per chain — bounds getLogs scans for "your pots". */
+export function factoryDeployBlock(): bigint {
+  return process.env.NEXT_PUBLIC_CHAIN === "testnet" ? 63354945n : 105647209n;
+}
+
 /** AUSD on Monad mainnet (LayerZero OFT). Null until configured per env. */
 export function ausdAddress(): `0x${string}` | null {
   const a = process.env.NEXT_PUBLIC_AUSD_ADDRESS;
