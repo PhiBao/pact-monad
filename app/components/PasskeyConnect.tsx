@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { passkeyConnect, passkeyDisconnect, passkeySession, shortAddress } from "../lib/mera";
+import { passkeyConnect, passkeyDisconnect, shortAddress } from "../lib/mera";
+import { useMera } from "../lib/mera-context";
 
-export default function PasskeyConnect({ onChange }: { onChange: (addr: string | null) => void }) {
-  const [addr, setAddr] = useState<string | null>(passkeySession()?.address ?? null);
+export default function PasskeyConnect() {
+  const { meraAddr: addr, setMeraAddr } = useMera();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -13,8 +14,7 @@ export default function PasskeyConnect({ onChange }: { onChange: (addr: string |
     setErr(null);
     try {
       const s = await passkeyConnect();
-      setAddr(s.address);
-      onChange(s.address);
+      setMeraAddr(s.address);
     } catch (e) {
       setErr(e instanceof Error ? e.message.slice(0, 160) : "passkey failed");
     } finally {
@@ -24,8 +24,7 @@ export default function PasskeyConnect({ onChange }: { onChange: (addr: string |
 
   const out = () => {
     passkeyDisconnect();
-    setAddr(null);
-    onChange(null);
+    setMeraAddr(null);
   };
 
   if (addr) {

@@ -7,12 +7,15 @@ import { injected } from "wagmi/connectors";
 import { DynamicContextProvider } from "@dynamic-labs/sdk-react-core";
 import { EthereumWalletConnectors } from "@dynamic-labs/ethereum";
 import { DynamicWagmiConnector } from "@dynamic-labs/wagmi-connector";
-import { activeChain, monadMainnet, monadTestnet } from "./monad";
+import { monadMainnet, monadTestnet } from "./monad";
+import { MeraProvider } from "./mera-context";
 
 const queryClient = new QueryClient();
 
+// Both Monad chains are registered so the in-app network switcher works;
+// activeChain() (env-driven) decides defaults, factory, and indexer bounds.
 const config = createConfig({
-  chains: [activeChain()],
+  chains: [monadMainnet, monadTestnet],
   connectors: [injected()],
   multiInjectedProviderDiscovery: false,
   transports: {
@@ -23,15 +26,19 @@ const config = createConfig({
 
 export const dynamicEnabled = !!process.env.NEXT_PUBLIC_DYNAMIC_ENV_ID;
 
-export function Providers({ children }: { children: ReactNode }) {
-  const wagmi = (
+function Core({ children }: { children: ReactNode }) {
+  return (
     <WagmiProvider config={config}>
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      <QueryClientProvider client={queryClient}>
+        <MeraProvider>{children}</MeraProvider>
+      </QueryClientProvider>
     </WagmiProvider>
   );
+}
 
+export function Providers({ children }: { children: ReactNode }) {
   // Without an env ID (e.g. CI), run plain wagmi so nothing breaks.
-  if (!dynamicEnabled) return wagmi;
+  if (!dynamicEnabled) return <Core>{children}</Core>;
 
   return (
     <DynamicContextProvider
@@ -40,11 +47,9 @@ export function Providers({ children }: { children: ReactNode }) {
         walletConnectors: [EthereumWalletConnectors],
       }}
     >
-      <WagmiProvider config={config}>
-        <QueryClientProvider client={queryClient}>
-          <DynamicWagmiConnector>{children}</DynamicWagmiConnector>
-        </QueryClientProvider>
-      </WagmiProvider>
+      <Core>
+        <DynamicWagmiConnector>{children}</DynamicWagmiConnector>
+      </Core>
     </DynamicContextProvider>
   );
 }

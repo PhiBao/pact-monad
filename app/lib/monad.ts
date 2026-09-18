@@ -1,11 +1,17 @@
 import { defineChain } from "viem";
 
+function rpcUrl(env: string | undefined, fallback: string): string {
+  return env && env.startsWith("http") ? env : fallback;
+}
+
 export const monadMainnet = defineChain({
   id: 143,
   name: "Monad",
   nativeCurrency: { name: "MON", symbol: "MON", decimals: 18 },
   rpcUrls: {
-    default: { http: ["https://rpc.monad.xyz"] },
+    default: {
+      http: [rpcUrl(process.env.NEXT_PUBLIC_MONAD_MAINNET_RPC, "https://rpc.monad.xyz")],
+    },
   },
   blockExplorers: {
     default: { name: "MonadVision", url: "https://monadvision.com" },
@@ -17,7 +23,11 @@ export const monadTestnet = defineChain({
   name: "Monad Testnet",
   nativeCurrency: { name: "MON", symbol: "MON", decimals: 18 },
   rpcUrls: {
-    default: { http: ["https://testnet-rpc.monad.xyz"] },
+    default: {
+      http: [
+        rpcUrl(process.env.NEXT_PUBLIC_MONAD_TESTNET_RPC, "https://testnet-rpc.monad.xyz"),
+      ],
+    },
   },
   blockExplorers: {
     default: { name: "MonadVision", url: "https://testnet.monadvision.com" },

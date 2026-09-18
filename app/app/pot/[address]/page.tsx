@@ -2,7 +2,7 @@
 
 import { use, useEffect, useState } from "react";
 import PasskeyConnect from "../../../components/PasskeyConnect";
-import SessionBar from "../../../components/SessionBar";
+import { useMera } from "../../../lib/mera-context";
 import { ChainGuard, useWrongChain } from "../../../components/ChainGuard";
 import DynamicLogin from "../../../components/DynamicLogin";
 import { dynamicEnabled } from "../../../lib/wagmi";
@@ -79,7 +79,7 @@ export default function PotPage({ params }: { params: Promise<{ address: string 
   const { address: me } = useAccount();
   const { connect, connectors } = useConnect();
   const { data, refetch } = usePot(pot);
-  const [meraAddr, setMeraAddr] = useState<string | null>(null);
+  const { meraAddr } = useMera();
   const viewer = (me ?? meraAddr) as `0x${string}` | undefined;
   const wrongChain = useWrongChain();
   const gating = !!me && wrongChain; // wagmi txs would land on the wrong network
@@ -130,12 +130,9 @@ export default function PotPage({ params }: { params: Promise<{ address: string 
 
   return (
     <main className="mx-auto max-w-2xl px-6 py-12">
-      <div className="flex items-center justify-between">
-        <a href="/" className="text-sm underline">
-          ← all pots
-        </a>
-        <SessionBar meraAddr={meraAddr} onMeraSignOut={() => setMeraAddr(null)} />
-      </div>
+      <a href="/" className="text-sm underline">
+        ← all pots
+      </a>
       <h1 className="mt-2 text-3xl font-black">{potTitle || "Untitled pot"}</h1>
       <p className="font-mono text-xs text-gray-500 break-all">{pot}</p>
       <p className="mt-1 text-sm">
@@ -197,7 +194,7 @@ export default function PotPage({ params }: { params: Promise<{ address: string 
           </p>
         ) : !viewer ? (
           <div className="grid gap-4">
-            <PasskeyConnect onChange={setMeraAddr} />
+            <PasskeyConnect />
             {dynamicEnabled ? (
               <DynamicLogin />
             ) : (

@@ -16,7 +16,7 @@ import { factoryAddress, ausdAddress, factoryDeployBlock } from "../lib/monad";
 import { factoryAbi, potAbi } from "../lib/abi";
 import PasskeyConnect from "../components/PasskeyConnect";
 import DynamicLogin from "../components/DynamicLogin";
-import SessionBar from "../components/SessionBar";
+import { useMera } from "../lib/mera-context";
 import { ChainGuard, useWrongChain } from "../components/ChainGuard";
 import { dynamicEnabled } from "../lib/wagmi";
 import { parsePotText, type PotProposal } from "../lib/assist";
@@ -62,7 +62,7 @@ export default function Home() {
   const [pkHash, setPkHash] = useState<`0x${string}` | undefined>();
   const [pkBusy, setPkBusy] = useState(false);
   const [pkErr, setPkErr] = useState<string | null>(null);
-  const [meraAddr, setMeraAddr] = useState<string | null>(null);
+  const { meraAddr } = useMera();
   const [redirecting, setRedirecting] = useState(false);
   const [createFallback, setCreateFallback] = useState<string | null>(null);
   const wrongChain = useWrongChain();
@@ -143,7 +143,7 @@ export default function Home() {
 
       {!isConnected && !meraAddr ? (
         <div className="mt-6 grid max-w-sm gap-3">
-          <PasskeyConnect onChange={setMeraAddr} />
+          <PasskeyConnect />
           {dynamicEnabled ? (
             <DynamicLogin />
           ) : (
