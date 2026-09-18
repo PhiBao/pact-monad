@@ -22,6 +22,7 @@ import { ChainGuard, useWrongChain } from "../components/ChainGuard";
 import { dynamicEnabled } from "../lib/wagmi";
 import { parsePotText, type PotProposal } from "../lib/assist";
 import { potFromReceipt } from "../lib/potFromReceipt";
+import { useWalletGuard } from "../lib/walletGuard";
 
 const ZERO = "0x0000000000000000000000000000000000000000" as const;
 
@@ -67,6 +68,7 @@ export default function Home() {
   const [redirecting, setRedirecting] = useState(false);
   const [createFallback, setCreateFallback] = useState<string | null>(null);
   const wrongChain = useWrongChain();
+  const { guard, checking, guardErr } = useWalletGuard();
   const { data: receipt } = useWaitForTransactionReceipt({ hash: hash ?? pkHash });
 
   // Creation confirmed → take the organizer straight to their pot.
@@ -115,7 +117,9 @@ export default function Home() {
       }
       return;
     }
-    writeContract({ address: factory, abi: factoryAbi, functionName: "createPot", args: [args.token, args.perPerson, args.partySize, args.deadline, args.payee, args.title] });
+    guard(() =>
+      writeContract({ address: factory, abi: factoryAbi, functionName: "createPot", args: [args.token, args.perPerson, args.partySize, args.deadline, args.payee, args.title] })
+    );
   };
 
   return (
@@ -240,12 +244,17 @@ export default function Home() {
             </label>
             <button
               onClick={create}
-              disabled={isPending || pkBusy || wrongChain}
+              disabled={isPending || pkBusy || checking || wrongChain}
               title={wrongChain ? "Switch network first" : undefined}
               className="mt-2 rounded-xl bg-emerald-900 px-6 py-3 font-semibold text-white disabled:opacity-50"
             >
-              {isPending || pkBusy ? "Creating…" : wrongChain ? "Switch network to create" : "Create pot"}
+              {isPending || pkBusy || checking
+                ? "Creating…"
+                : wrongChain
+                  ? "Switch network to create"
+                  : "Create pot"}
             </button>
+            {guardErr && <p className="text-sm text-amber-800">{guardErr}</p>}
             {error && <p className="text-sm text-red-700">{error.message.slice(0, 200)}</p>}
             {pkErr && <p className="text-sm text-red-700">{pkErr}</p>}
             {(isPending || pkBusy || redirecting) && !createFallback && (

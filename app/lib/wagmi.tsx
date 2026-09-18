@@ -15,7 +15,7 @@ const queryClient = new QueryClient();
 
 // Both Monad chains are registered so the in-app network switcher works;
 // activeChain() (env-driven) decides defaults, factory, and indexer bounds.
-const config = createConfig({
+export const wagmiConfig = createConfig({
   chains: [monadMainnet, monadTestnet],
   connectors: [injected()],
   multiInjectedProviderDiscovery: false,
@@ -29,7 +29,7 @@ export const dynamicEnabled = !!process.env.NEXT_PUBLIC_DYNAMIC_ENV_ID;
 
 function Core({ children }: { children: ReactNode }) {
   return (
-    <WagmiProvider config={config}>
+    <WagmiProvider config={wagmiConfig}>
       <QueryClientProvider client={queryClient}>
         <MeraProvider>
           <AppChainProvider>{children}</AppChainProvider>

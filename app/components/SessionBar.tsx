@@ -77,17 +77,26 @@ function BarPlain() {
 
 function BarDynamic() {
   const { meraAddr } = useMera();
-  const { primaryWallet, handleLogOut, setShowDynamicUserProfile } = useDynamicContext();
+  const { primaryWallet, user, handleLogOut, setShowDynamicUserProfile } = useDynamicContext();
   const { address } = useAccount();
   const { disconnect } = useDisconnect();
   if (meraAddr) return <MeraChip />;
   const who = primaryWallet?.address ?? address;
-  if (!who)
+  if (!who) {
+    if (user) {
+      return (
+        <div className="flex items-center gap-2 text-sm">
+          <NetworkSelect />
+          <span className="rounded-full bg-blue-100 px-3 py-1">⏳ setting up wallet…</span>
+        </div>
+      );
+    }
     return (
       <div className="flex items-center gap-2 text-sm">
         <NetworkSelect />
       </div>
     );
+  }
   return (
     <div className="flex items-center gap-2 text-sm">
       <NetworkSelect />

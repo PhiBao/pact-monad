@@ -7,6 +7,7 @@ import { ChainGuard } from "../../../components/ChainGuard";
 import DynamicLogin from "../../../components/DynamicLogin";
 import { dynamicEnabled } from "../../../lib/wagmi";
 import { passkeyApprove, passkeyCommit, passkeyCall } from "../../../lib/pactWrite";
+import { useWalletGuard } from "../../../lib/walletGuard";
 import { scorePotLegit } from "../../../lib/assist";
 
 function LegitBadge({
@@ -145,9 +146,12 @@ export default function PotPage({ params }: { params: Promise<{ address: string 
   const left = Math.max(0, Number(deadline) - Math.floor(Date.now() / 1000));
   const explorer = `${chain.blockExplorers!.default.url}/address/${pot}`;
 
+  const { guard, checking, guardErr } = useWalletGuard();
+  // Every wagmi write passes the live send-time network check first, so a
+  // stale header can never let a transaction escape to the wrong chain.
   const act = (fn: () => void) => {
     reset?.();
-    fn();
+    guard(fn);
   };
 
   return (
@@ -240,10 +244,10 @@ export default function PotPage({ params }: { params: Promise<{ address: string 
                       writeContract({ address: pot, abi: potAbi, functionName: "commit", value: perPerson })
                     )
               }
-              disabled={isPending || pkBusy}
+              disabled={isPending || pkBusy || checking}
               className="rounded-xl bg-emerald-900 px-6 py-3 font-semibold text-white disabled:opacity-50"
             >
-              {isPending || pkBusy ? "Committing…" : `Commit ${formatEther(perPerson)} MON`}
+              {isPending || pkBusy || checking ? "Committing…" : `Commit ${formatEther(perPerson)} MON`}
             </button>
           ) : (
             <Erc20Commit
@@ -262,10 +266,12 @@ export default function PotPage({ params }: { params: Promise<{ address: string 
                 ? pk(() => passkeyCall(pot, "release", viewedId))
                 : act(() => writeContract({ address: pot, abi: potAbi, functionName: "release" }))
             }
-            disabled={isPending || pkBusy}
+            disabled={isPending || pkBusy || checking}
             className="rounded-xl bg-emerald-700 px-6 py-3 font-semibold text-white disabled:opacity-50"
           >
-            {isPending || pkBusy ? "Releasing…" : `Release ${formatEther(perPerson * size)} to organizer`}
+            {isPending || pkBusy || checking
+              ? "Releasing…"
+              : `Release ${formatEther(perPerson * size)} to organizer`}
           </button>
         ) : state === 0 && expired ? (
           <ExpireRefund
@@ -284,10 +290,10 @@ export default function PotPage({ params }: { params: Promise<{ address: string 
                   ? pk(() => passkeyCall(pot, "refund", viewedId))
                   : act(() => writeContract({ address: pot, abi: potAbi, functionName: "refund" }))
               }
-              disabled={isPending || pkBusy}
+              disabled={isPending || pkBusy || checking}
               className="rounded-xl bg-gray-900 px-6 py-3 font-semibold text-white disabled:opacity-50"
             >
-              {isPending || pkBusy ? "Refunding…" : "Claim my refund"}
+              {isPending || pkBusy || checking ? "Refunding…" : "Claim my refund"}
             </button>
           ) : (
             <p>Pot missed its goal. Contributors can claim refunds.</p>
@@ -297,6 +303,7 @@ export default function PotPage({ params }: { params: Promise<{ address: string 
             Paid out to <span className="font-mono text-xs">{payee}</span>
           </p>
         )}
+        {guardErr && <p className="mt-2 text-sm text-amber-800">{guardErr}</p>}
         {error && <p className="mt-2 text-sm text-red-700">{error.message.slice(0, 220)}</p>}
         {pkErr && <p className="mt-2 text-sm text-red-700">{pkErr}</p>}
         {isSuccess && (
@@ -333,6 +340,7 @@ function Erc20Commit({
   const { address: me } = useAccount();
   const viewer = me ?? undefined;
   const { writeContract, isPending, data: txHash } = useWriteContract();
+  const { guard, checking, guardErr } = useWalletGuard();
   const { data: allowance, refetch } = useReadContract({
     address: token,
     abi: erc20Abi,
@@ -353,27 +361,35 @@ function Erc20Commit({
           refetch();
           return h;
         })
-      : writeContract({ address: token, abi: erc20Abi, functionName: "approve", args: [pot, perPerson] });
+      : guard(() =>
+          writeContract({ address: token, abi: erc20Abi, functionName: "approve", args: [pot, perPerson] })
+        );
   const commit = () =>
     viaPasskey
       ? pk(() => passkeyCommit(pot, 0n, chainId))
-      : writeContract({ address: pot, abi: potAbi, functionName: "commit" });
-  return ok ? (
-    <button
-      onClick={commit}
-      disabled={isPending}
-      className="rounded-xl bg-emerald-900 px-6 py-3 font-semibold text-white disabled:opacity-50"
-    >
-      Commit tokens
-    </button>
-  ) : (
-    <button
-      onClick={approve}
-      disabled={isPending}
-      className="rounded-xl bg-emerald-900 px-6 py-3 font-semibold text-white disabled:opacity-50"
-    >
-      Approve then commit
-    </button>
+      : guard(() => writeContract({ address: pot, abi: potAbi, functionName: "commit" }));
+  const busy = isPending || checking;
+  return (
+    <>
+      {ok ? (
+        <button
+          onClick={commit}
+          disabled={busy}
+          className="rounded-xl bg-emerald-900 px-6 py-3 font-semibold text-white disabled:opacity-50"
+        >
+          Commit tokens
+        </button>
+      ) : (
+        <button
+          onClick={approve}
+          disabled={busy}
+          className="rounded-xl bg-emerald-900 px-6 py-3 font-semibold text-white disabled:opacity-50"
+        >
+          Approve then commit
+        </button>
+      )}
+      {guardErr && <p className="mt-2 text-sm text-amber-800">{guardErr}</p>}
+    </>
   );
 }
 
@@ -393,22 +409,24 @@ function ExpireRefund({
   pk: (fn: () => Promise<`0x${string}`>) => Promise<void>;
 }) {
   const { writeContract, isPending } = useWriteContract();
+  const { guard, checking, guardErr } = useWalletGuard();
   void me;
   const expire = () =>
     viaPasskey
       ? pk(() => passkeyCall(pot, "expire", chainId))
-      : writeContract({ address: pot, abi: potAbi, functionName: "expire" });
+      : guard(() => writeContract({ address: pot, abi: potAbi, functionName: "expire" }));
   const refund = () =>
     viaPasskey
       ? pk(() => passkeyCall(pot, "refund", chainId))
-      : writeContract({ address: pot, abi: potAbi, functionName: "refund" });
+      : guard(() => writeContract({ address: pot, abi: potAbi, functionName: "refund" }));
+  const busy = isPending || checking;
   return (
     <div className="grid gap-2">
       <p className="text-sm">Deadline passed without filling. Open refunds, then claim yours.</p>
       <div className="flex gap-2">
         <button
           onClick={expire}
-          disabled={isPending}
+          disabled={busy}
           className="rounded-xl bg-gray-900 px-6 py-3 font-semibold text-white disabled:opacity-50"
         >
           Open refunds
@@ -416,13 +434,14 @@ function ExpireRefund({
         {myCommitted && (
           <button
             onClick={refund}
-            disabled={isPending}
+            disabled={busy}
             className="rounded-xl border px-6 py-3 font-semibold disabled:opacity-50"
           >
             Claim refund
           </button>
         )}
       </div>
+      {guardErr && <p className="text-sm text-amber-800">{guardErr}</p>}
     </div>
   );
 }
