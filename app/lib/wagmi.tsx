@@ -4,7 +4,7 @@ import { ReactNode } from "react";
 import { WagmiProvider, createConfig, http } from "wagmi";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { injected } from "wagmi/connectors";
-import { DynamicContextProvider } from "@dynamic-labs/sdk-react-core";
+import { DynamicContextProvider, DynamicWidget } from "@dynamic-labs/sdk-react-core";
 import { EthereumWalletConnectors } from "@dynamic-labs/ethereum";
 import { DynamicWagmiConnector } from "@dynamic-labs/wagmi-connector";
 import { monadMainnet, monadTestnet } from "./monad";
@@ -48,7 +48,16 @@ export function Providers({ children }: { children: ReactNode }) {
       }}
     >
       <Core>
-        <DynamicWagmiConnector>{children}</DynamicWagmiConnector>
+        <DynamicWagmiConnector>
+          {children}
+          {/* Mounted once as the host for the built-in profile/account modal
+              (opened via setShowDynamicUserProfile). The trigger button is
+              hidden — our own header cluster is the visible UI; the modal
+              itself portals to document.body. */}
+          <span style={{ display: "none" }} aria-hidden>
+            <DynamicWidget />
+          </span>
+        </DynamicWagmiConnector>
       </Core>
     </DynamicContextProvider>
   );
