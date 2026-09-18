@@ -24,8 +24,9 @@ function extractNumbers(text: string): { amount: string | null; partySize: strin
   if (amt) amount = amt[1];
 
   const size =
-    t.match(/(\d+)\s*(?:people|persons|friends|members|of us|spots|guests|roommates)/) ??
-    t.match(/(?:group of|party of|for)\s*(\d+)/);
+    t.match(
+      /(\d+)\s*(?:people|persons|friends|members|colleagues|teammates|coworkers|classmates|cousins|siblings|of us|spots|guests|roommates)/
+    ) ?? t.match(/(?:group of|party of|for)\s*(\d+)/);
   if (size) partySize = size[1];
 
   return { amount, partySize };
