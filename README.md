@@ -1,4 +1,4 @@
-# Pact — money only moves if the group means it
+# WeMadeIt — money only moves if the group means it
 
 **Live: https://pact-beta.vercel.app** · Track: **Consumer Products & Payments**
 (Metropolis hackathon, Monad) · License: MIT.
@@ -13,13 +13,13 @@ for professional tour operators, with custodial holds and weeks-long payouts —
 overkill for six friends. Crowdtilt proved people *want* threshold-based group
 funding (it peaked near a $400M valuation), but custodial cards and Venmo killed it.
 
-**What.** Pact turns an informal promise ("yeah, I'm in") into **programmable
+**What.** WeMadeIt turns an informal promise ("yeah, I'm in") into **programmable
 group intent**: the organizer names a rule — *$X each, N people, by Friday* — and
 shares a link. Contributions lock in non-custodial escrow. Hit the rule and the
 organizer is paid automatically (**TILTED**). Miss it and everyone claims a
 refund. **No tilt, no charge.**
 
-**Why.** The failure isn't splitting — it's *commitment*. Pact answers "will
+**Why.** The failure isn't splitting — it's *commitment*. WeMadeIt answers "will
 everyone actually pay?" *before* anyone is exposed, instead of documenting the
 answer afterward.
 
@@ -102,7 +102,7 @@ always the source of truth.
 
 ## Vision & roadmap
 
-Pact starts as the commitment layer for informal groups and grows into group
+WeMadeIt starts as the commitment layer for informal groups and grows into group
 treasury infrastructure:
 
 - **Now (hackathon):** MON pots, FaceID + email login, tilt/refund, live demo.
@@ -116,7 +116,7 @@ treasury infrastructure:
 **Business model:** 1% fee on tilted pots (onchain, capped at 5%), free under a
 threshold; pro tier for clubs/creators (recurring pots, custom branding,
 analytics). Contra charges 0% and monetizes elsewhere; WeTravel takes cuts plus
-holds — Pact is cheaper *and* non-custodial.
+holds — WeMadeIt is cheaper *and* non-custodial.
 
 ## Bounty alignment
 
@@ -148,4 +148,4 @@ Vercel: Root Directory `app`, push-to-main auto-deploys.
 1. "Who fronted a trip and got ghosted?" 2. Type one sentence → form drafts
    itself → create + share link. 3. Two phones FaceID-commit live. 4. Third
    commits → **TILTED** + explorer tx. 5. Expired pot → refund claimed live.
-   6. "Splitwise records debt. Pact prevents it."
+   6. "Splitwise records debt. WeMadeIt prevents it."

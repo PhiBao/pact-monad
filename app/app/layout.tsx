@@ -4,7 +4,7 @@ import { Providers } from "../lib/wagmi";
 import SiteHeader from "../components/SiteHeader";
 
 export const metadata: Metadata = {
-  title: "Pact — money only moves if the group means it",
+  title: "WeMadeIt — money only moves if the group means it",
   description:
     "Conditional group pots on Monad. Commit your share; funds release only when the group hits its rule. No tilt, no charge.",
 };

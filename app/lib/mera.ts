@@ -100,19 +100,19 @@ export async function passkeySignInExisting(): Promise<PactSession> {
 }
 
 /** Create a fresh passkey. Shows the browser sheet exactly once. */
-export async function passkeyCreate(displayName = "Pact user"): Promise<PactSession> {
+export async function passkeyCreate(displayName = "WeMadeIt user"): Promise<PactSession> {
   if (live) return live;
   const rpId = window.location.hostname;
   const created = await createPasskeyWithPrfOutput({
-    rp: { id: rpId, name: "Pact" },
-    user: { name: `pact-${Date.now()}`, displayName },
+    rp: { id: rpId, name: "WeMadeIt" },
+    user: { name: `wemadeit-${Date.now()}`, displayName },
   });
   localStorage.setItem(CRED_KEY, JSON.stringify({ credentialId: created.credentialId }));
   return openSession(created.prfOutput);
 }
 
 /** Legacy entry: prefer passkeySignIn / passkeyCreate directly. */
-export async function passkeyConnect(displayName = "Pact user"): Promise<PactSession> {
+export async function passkeyConnect(displayName = "WeMadeIt user"): Promise<PactSession> {
   if (hasStoredCredential()) return passkeySignIn();
   return passkeyCreate(displayName);
 }
