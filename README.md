@@ -147,5 +147,6 @@ Vercel: Root Directory `app`, push-to-main auto-deploys.
 
 1. "Who fronted a trip and got ghosted?" 2. Type one sentence → form drafts
    itself → create + share link. 3. Two phones FaceID-commit live. 4. Third
-   commits → **TILTED** + explorer tx. 5. Expired pot → refund claimed live.
-   6. "Splitwise records debt. WeMadeIt prevents it."
+   commits → **WE MADE IT 🎉** fills the screen + explorer tx — say it with
+   the room. 5. Expired pot → refund claimed live. 6. Close: "Splitwise
+   records debt. WeMadeIt prevents it."

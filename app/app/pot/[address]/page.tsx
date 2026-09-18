@@ -194,7 +194,7 @@ export default function PotPage({ params }: { params: Promise<{ address: string 
           />
         </div>
         {full && state === 0 && (
-          <p className="mt-3 animate-pulse text-xl font-black text-emerald-800">TILTED 🎉</p>
+          <p className="mt-3 animate-pulse text-xl font-black text-emerald-800">WE MADE IT 🎉</p>
         )}
       </div>
 
