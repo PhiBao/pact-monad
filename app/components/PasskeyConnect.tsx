@@ -1,26 +1,78 @@
 "use client";
 
-import { useState } from "react";
-import { passkeyConnect, passkeyDisconnect, shortAddress } from "../lib/mera";
+import { useEffect, useState } from "react";
+import {
+  clearStoredCredential,
+  hasStoredCredential,
+  isCancel,
+  isPrfUnavailable,
+  passkeyCreate,
+  passkeyDisconnect,
+  passkeySignIn,
+  passkeySignInExisting,
+  shortAddress,
+  supportsPlatformBiometrics,
+} from "../lib/mera";
 import { useMera } from "../lib/mera-context";
 
+// Smart Face ID flow: we know whether this browser has a passkey for us, so
+// we never show a doomed "pick a passkey" sheet first. No stored credential →
+// straight to create. Stored → straight to sign-in. A quiet secondary path
+// covers returning users on a new device.
 export default function PasskeyConnect() {
   const { meraAddr: addr, setMeraAddr } = useMera();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [known, setKnown] = useState(false);
+  const [bio, setBio] = useState<boolean | null>(null);
 
-  const go = async () => {
+  useEffect(() => {
+    setKnown(hasStoredCredential());
+    supportsPlatformBiometrics().then(setBio);
+  }, []);
+
+  const create = async () => {
     setBusy(true);
     setErr(null);
     try {
-      const s = await passkeyConnect();
-      setMeraAddr(s.address);
+      setMeraAddr((await passkeyCreate()).address);
+      setKnown(true);
     } catch (e) {
-      setErr(e instanceof Error ? e.message.slice(0, 160) : "passkey failed");
+      if (isCancel(e)) {
+        // dismissed — back to idle, no scolding
+      } else if (isPrfUnavailable(e)) {
+        setErr(
+          "That passkey can't unlock a wallet (no PRF support). Try iCloud Keychain, Google Password Manager, or 1Password — or use email login below."
+        );
+      } else {
+        setErr(e instanceof Error ? e.message.slice(0, 160) : "Face ID failed — try again.");
+      }
     } finally {
       setBusy(false);
     }
   };
+
+  const signIn = async (existing = false) => {
+    setBusy(true);
+    setErr(null);
+    try {
+      setMeraAddr((await (existing ? passkeySignInExisting() : passkeySignIn())).address);
+      setKnown(true);
+    } catch (e) {
+      if (isCancel(e)) {
+        // dismissed — back to idle
+      } else {
+        // Stored credential is stale (deleted passkey, new profile…).
+        clearStoredCredential();
+        setKnown(false);
+        setErr("Couldn't find that passkey on this device. Create a new one below.");
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const go = () => (known ? signIn() : create());
 
   const out = () => {
     passkeyDisconnect();
@@ -37,6 +89,8 @@ export default function PasskeyConnect() {
       </div>
     );
   }
+
+  const bioWord = bio === false ? "your password manager or security key" : "Face ID";
   return (
     <div>
       <button
@@ -44,9 +98,18 @@ export default function PasskeyConnect() {
         disabled={busy}
         className="rounded-xl bg-black px-6 py-3 font-semibold text-white disabled:opacity-50"
       >
-        {busy ? "Waiting for Face ID…" : "Continue with Face ID"}
+        {busy ? "Waiting for confirmation…" : "Continue with Face ID"}
       </button>
-      <p className="mt-1 text-xs text-gray-600">No seed phrase. Same account on every synced device.</p>
+      <p className="mt-1 text-xs text-gray-600">
+        {known
+          ? `Signs you back in with ${bioWord}.`
+          : `First time? Creates your ${bioWord} login automatically — no seed phrase, works on your other synced devices.`}
+      </p>
+      {!known && !busy && (
+        <button onClick={() => signIn(true)} className="mt-1 text-xs underline">
+          I already have a passkey for this site
+        </button>
+      )}
       {err && <p className="mt-1 text-sm text-red-700">{err}</p>}
     </div>
   );

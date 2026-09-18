@@ -8,6 +8,7 @@ import {
   createPasskeyWithPrfOutput,
   getPasskeyPrfOutput,
   createSecp256k1SigningSession,
+  isMeraError,
 } from "@category-labs/mera";
 import type { Secp256k1SigningSession } from "@category-labs/mera";
 import { toViemAccount } from "@category-labs/mera/viem";
@@ -48,27 +49,72 @@ function readStoredCredential() {
   }
 }
 
-/** Face ID sign-in. Reuses the stored passkey, or creates one on first run. */
-export async function passkeyConnect(displayName = "Pact user"): Promise<PactSession> {
+export function hasStoredCredential(): boolean {
+  return !!readStoredCredential();
+}
+
+export function clearStoredCredential() {
+  try {
+    localStorage.removeItem(CRED_KEY);
+  } catch {
+    /* private mode */
+  }
+}
+
+/** User dismissed the browser sheet — not an error worth showing. */
+export function isCancel(e: unknown): boolean {
+  return isMeraError(e) && e.code === "PASSKEY_OPERATION_FAILED";
+}
+
+export function isPrfUnavailable(e: unknown): boolean {
+  return isMeraError(e) && e.code === "PRF_UNAVAILABLE";
+}
+
+/** This device's authenticator does device biometrics (Face ID / fingerprint). */
+export async function supportsPlatformBiometrics(): Promise<boolean> {
+  try {
+    const c = window.PublicKeyCredential;
+    if (!c?.isUserVerifyingPlatformAuthenticatorAvailable) return false;
+    return await c.isUserVerifyingPlatformAuthenticatorAvailable();
+  } catch {
+    return false;
+  }
+}
+
+/** Sign in with the known passkey. Throws when none is stored. */
+export async function passkeySignIn(): Promise<PactSession> {
+  if (live) return live;
+  const known = readStoredCredential();
+  if (!known) throw new Error("no stored passkey");
+  const got = await getPasskeyPrfOutput({ rpId: window.location.hostname, credential: known });
+  localStorage.setItem(CRED_KEY, JSON.stringify({ credentialId: got.credentialId }));
+  return openSession(got.prfOutput);
+}
+
+/** Sign in with any passkey the authenticator offers (new device). */
+export async function passkeySignInExisting(): Promise<PactSession> {
+  if (live) return live;
+  const got = await getPasskeyPrfOutput({ rpId: window.location.hostname });
+  localStorage.setItem(CRED_KEY, JSON.stringify({ credentialId: got.credentialId }));
+  return openSession(got.prfOutput);
+}
+
+/** Create a fresh passkey. Shows the browser sheet exactly once. */
+export async function passkeyCreate(displayName = "Pact user"): Promise<PactSession> {
   if (live) return live;
   const rpId = window.location.hostname;
-  const known = readStoredCredential();
-  try {
-    const got = await getPasskeyPrfOutput({ rpId, credential: known });
-    localStorage.setItem(CRED_KEY, JSON.stringify({ credentialId: got.credentialId }));
-    return openSession(got.prfOutput);
-  } catch {
-    // No usable passkey yet — create one.
-    const created = await createPasskeyWithPrfOutput({
-      rp: { id: rpId, name: "Pact" },
-      user: { name: `pact-${Date.now()}`, displayName },
-    });
-    localStorage.setItem(
-      CRED_KEY,
-      JSON.stringify({ credentialId: created.credentialId })
-    );
-    return openSession(created.prfOutput);
-  }
+  const created = await createPasskeyWithPrfOutput({
+    rp: { id: rpId, name: "Pact" },
+    user: { name: `pact-${Date.now()}`, displayName },
+  });
+  localStorage.setItem(CRED_KEY, JSON.stringify({ credentialId: created.credentialId }));
+  return openSession(created.prfOutput);
+}
+
+/** Legacy entry: prefer passkeySignIn / passkeyCreate directly. */
+export async function passkeyConnect(displayName = "Pact user"): Promise<PactSession> {
+  if (hasStoredCredential()) return passkeySignIn();
+  return passkeyCreate(displayName);
 }
 
 export function passkeySession(): PactSession | null {
