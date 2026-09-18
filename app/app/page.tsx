@@ -12,7 +12,8 @@ import {
   useWaitForTransactionReceipt,
 } from "wagmi";
 import { parseAbiItem, parseEther } from "viem";
-import { factoryAddress, ausdAddress, factoryDeployBlock } from "../lib/monad";
+import { ausdAddress } from "../lib/monad";
+import { useAppChain } from "../lib/app-chain";
 import { factoryAbi, potAbi } from "../lib/abi";
 import PasskeyConnect from "../components/PasskeyConnect";
 import DynamicLogin from "../components/DynamicLogin";
@@ -26,7 +27,7 @@ const ZERO = "0x0000000000000000000000000000000000000000" as const;
 
 export default function Home() {
   const router = useRouter();
-  const factory = factoryAddress();
+  const { appChainId, factory, deployBlock } = useAppChain();
   const ausd = ausdAddress();
   const { address, isConnected } = useAccount();
   const { connect, connectors } = useConnect();
@@ -82,22 +83,12 @@ export default function Home() {
   }, [receipt]);
 
   const { data: potCount } = useReadContract({
-    address: factory ?? undefined,
+    address: factory,
     abi: factoryAbi,
     functionName: "potCount",
-    query: { enabled: !!factory },
+    chainId: appChainId,
+    query: { refetchInterval: 5000 },
   });
-
-  if (!factory) {
-    return (
-      <main className="mx-auto max-w-2xl px-6 py-16">
-        <h1 className="text-4xl font-bold">Pact</h1>
-        <p className="mt-4">
-          Factory not configured. Set <code>NEXT_PUBLIC_FACTORY_ADDRESS</code> and redeploy.
-        </p>
-      </main>
-    );
-  }
 
   const create = async () => {
     const tokenAddr = (token === "AUSD" && ausd ? ausd : ZERO) as `0x${string}`;
@@ -116,7 +107,7 @@ export default function Home() {
       setPkErr(null);
       try {
         const { passkeyCreatePot } = await import("../lib/pactWrite");
-        setPkHash(await passkeyCreatePot(factory, args));
+        setPkHash(await passkeyCreatePot(factory, args, appChainId));
       } catch (e) {
         setPkErr(e instanceof Error ? e.message.slice(0, 200) : "create failed");
       } finally {
@@ -272,14 +263,24 @@ export default function Home() {
       )}
 
       <section className="mt-10">
-        <YourPots factory={factory} viewer={(address ?? meraAddr) as `0x${string}` | undefined} />
+        <YourPots
+          factory={factory}
+          viewer={(address ?? meraAddr) as `0x${string}` | undefined}
+          chainId={appChainId}
+          deployBlock={deployBlock}
+        />
       </section>
 
       <section className="mt-8">
         <h2 className="text-xl font-bold">
           Recent pots {potCount !== undefined ? `(${potCount.toString()})` : ""}
         </h2>
-        <RecentPots factory={factory} count={potCount} onOpen={(a) => router.push(`/pot/${a}`)} />
+        <RecentPots
+          factory={factory}
+          count={potCount}
+          chainId={appChainId}
+          onOpen={(a) => router.push(`/pot/${a}`)}
+        />
       </section>
     </main>
   );
@@ -289,14 +290,18 @@ export default function Home() {
 function YourPots({
   factory,
   viewer,
+  chainId,
+  deployBlock,
 }: {
   factory: `0x${string}`;
   viewer: `0x${string}` | undefined;
+  chainId: 143 | 10143;
+  deployBlock: bigint;
 }) {
-  const client = usePublicClient();
+  const client = usePublicClient({ chainId });
   const [mine, setMine] = useState<string[]>([]);
   useEffect(() => {
-    if (!client || !factory || !viewer) {
+    if (!client || !viewer) {
       setMine([]);
       return;
     }
@@ -307,18 +312,18 @@ function YourPots({
           "event PotCreated(address indexed pot, address indexed organizer, address indexed payee, address token, uint256 perPerson, uint256 partySize, uint256 deadline, string title)"
         ),
         args: { organizer: viewer },
-        fromBlock: factoryDeployBlock(),
+        fromBlock: deployBlock,
       })
       .then((ls) =>
         setMine([...new Set(ls.map((l) => (l.args as unknown as { pot: string }).pot))].reverse())
       )
       .catch(() => setMine([]));
-  }, [client, factory, viewer]);
+  }, [client, factory, viewer, deployBlock]);
   if (!viewer || mine.length === 0) return null;
   return (
     <>
       <h2 className="text-xl font-bold">Your pots ({mine.length})</h2>
-      <PotCards factory={factory} addrs={mine} />
+      <PotCards factory={factory} addrs={mine} chainId={chainId} />
     </>
   );
 }
@@ -326,40 +331,46 @@ function YourPots({
 function RecentPots({
   factory,
   count,
+  chainId,
   onOpen,
 }: {
   factory: `0x${string}`;
   count: bigint | undefined;
+  chainId: 143 | 10143;
   onOpen: (a: string) => void;
 }) {
   const n = count === undefined ? 0 : Number(count);
   const [addrs, setAddrs] = useState<string[]>([]);
-  const client = usePublicClient();
+  const client = usePublicClient({ chainId });
   useEffect(() => {
-    if (!client || !factory || n === 0) {
+    if (!client || n === 0) {
       setAddrs([]);
       return;
     }
     const start = Math.max(0, n - 10);
     const idx = Array.from({ length: n - start }, (_, i) => BigInt(start + i));
     Promise.all(
-      idx.map((i) => client.readContract({ address: factory, abi: factoryAbi, functionName: "allPots", args: [i] }))
+      idx.map((i) =>
+        client.readContract({ address: factory, abi: factoryAbi, functionName: "allPots", args: [i] })
+      )
     )
       .then((a) => setAddrs((a as string[]).reverse()))
       .catch(() => setAddrs([]));
   }, [client, factory, n]);
   if (n === 0) return <p className="mt-2 text-sm">No pots yet — start the first one.</p>;
-  return <PotCards factory={factory} addrs={addrs} onOpen={onOpen} />;
+  return <PotCards factory={factory} addrs={addrs} chainId={chainId} onOpen={onOpen} />;
 }
 
 /** Titled cards with live progress. Global scope — "Your pots" filters above. */
 function PotCards({
   factory,
   addrs,
+  chainId,
   onOpen,
 }: {
   factory: `0x${string}`;
   addrs: string[];
+  chainId: 143 | 10143;
   onOpen?: (a: string) => void;
 }) {
   void factory;
@@ -367,22 +378,30 @@ function PotCards({
   return (
     <ul className="mt-3 grid gap-2">
       {addrs.map((a) => (
-        <PotCard key={a} pot={a as `0x${string}`} onOpen={onOpen} />
+        <PotCard key={a} pot={a as `0x${string}`} chainId={chainId} onOpen={onOpen} />
       ))}
     </ul>
   );
 }
 
-function PotCard({ pot, onOpen }: { pot: `0x${string}`; onOpen?: (a: string) => void }) {
+function PotCard({
+  pot,
+  chainId,
+  onOpen,
+}: {
+  pot: `0x${string}`;
+  chainId: 143 | 10143;
+  onOpen?: (a: string) => void;
+}) {
   const router = useRouter();
   const open = onOpen ?? ((a: string) => router.push(`/pot/${a}`));
   const { data } = useReadContracts({
-    contracts: [
-      { address: pot, abi: potAbi, functionName: "title" },
-      { address: pot, abi: potAbi, functionName: "commitCount" },
-      { address: pot, abi: potAbi, functionName: "partySize" },
-      { address: pot, abi: potAbi, functionName: "state" },
-    ],
+    contracts: (["title", "commitCount", "partySize", "state"] as const).map((functionName) => ({
+      address: pot,
+      abi: potAbi,
+      functionName,
+      chainId,
+    })),
   });
   const [title, count, size, state] = (data?.map((d) => d.result) ?? []) as [
     string | undefined,

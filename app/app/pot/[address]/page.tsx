@@ -3,7 +3,7 @@
 import { use, useEffect, useState } from "react";
 import PasskeyConnect from "../../../components/PasskeyConnect";
 import { useMera } from "../../../lib/mera-context";
-import { ChainGuard, useWrongChain } from "../../../components/ChainGuard";
+import { ChainGuard } from "../../../components/ChainGuard";
 import DynamicLogin from "../../../components/DynamicLogin";
 import { dynamicEnabled } from "../../../lib/wagmi";
 import { passkeyApprove, passkeyCommit, passkeyCall } from "../../../lib/pactWrite";
@@ -42,6 +42,7 @@ function LegitBadge({
 }
 import {
   useAccount,
+  useChainId,
   useConnect,
   useReadContract,
   useReadContracts,
@@ -50,22 +51,25 @@ import {
 } from "wagmi";
 import { formatEther } from "viem";
 import { potAbi, erc20Abi } from "../../../lib/abi";
-import { factoryAddress, activeChain } from "../../../lib/monad";
+import { AppChainId, useAppChain } from "../../../lib/app-chain";
+import { chainFor } from "../../../lib/monad";
 
 const ZERO = "0x0000000000000000000000000000000000000000";
 
-function usePot(address: `0x${string}`) {
+function usePot(address: `0x${string}`, chainId: AppChainId) {
+  const c = (functionName: "state" | "commitCount" | "partySize" | "perPerson" | "deadline" | "token" | "payee" | "contributors" | "title") =>
+    ({ address, abi: potAbi, functionName, chainId }) as const;
   return useReadContracts({
     contracts: [
-      { address, abi: potAbi, functionName: "state" },
-      { address, abi: potAbi, functionName: "commitCount" },
-      { address, abi: potAbi, functionName: "partySize" },
-      { address, abi: potAbi, functionName: "perPerson" },
-      { address, abi: potAbi, functionName: "deadline" },
-      { address, abi: potAbi, functionName: "token" },
-      { address, abi: potAbi, functionName: "payee" },
-      { address, abi: potAbi, functionName: "contributors" },
-      { address, abi: potAbi, functionName: "title" },
+      c("state"),
+      c("commitCount"),
+      c("partySize"),
+      c("perPerson"),
+      c("deadline"),
+      c("token"),
+      c("payee"),
+      c("contributors"),
+      c("title"),
     ],
     query: { refetchInterval: 2000 },
   });
@@ -74,15 +78,33 @@ function usePot(address: `0x${string}`) {
 export default function PotPage({ params }: { params: Promise<{ address: string }> }) {
   const { address: raw } = use(params);
   const pot = raw as `0x${string}`;
-  const chain = activeChain();
-  const factory = factoryAddress();
+  const { appChainId, setAppChainId } = useAppChain();
   const { address: me } = useAccount();
+  const walletChain = useChainId();
   const { connect, connectors } = useConnect();
-  const { data, refetch } = usePot(pot);
+
+  // Deep links carry no chain: probe both and follow the pot wherever it lives.
+  const { data: probe } = useReadContracts({
+    contracts: [
+      { address: pot, abi: potAbi, functionName: "title", chainId: 143 },
+      { address: pot, abi: potAbi, functionName: "title", chainId: 10143 },
+    ],
+  });
+  const [tMain, tTest] = (probe?.map((d) => d.result) ?? []) as [
+    string | undefined,
+    string | undefined,
+  ];
+  const viewedId: AppChainId =
+    (appChainId === 143 ? !!tMain : !!tTest) ? appChainId : tMain ? 143 : tTest ? 10143 : appChainId;
+  useEffect(() => {
+    if (viewedId !== appChainId) setAppChainId(viewedId);
+  }, [viewedId, appChainId, setAppChainId]);
+  const chain = chainFor(viewedId);
+
+  const { data, refetch } = usePot(pot, viewedId);
   const { meraAddr } = useMera();
   const viewer = (me ?? meraAddr) as `0x${string}` | undefined;
-  const wrongChain = useWrongChain();
-  const gating = !!me && wrongChain; // wagmi txs would land on the wrong network
+  const gating = !!me && walletChain !== viewedId; // wagmi txs would land elsewhere
 
   const { writeContract, data: hash, isPending, error, reset } = useWriteContract();
   const [pkHash, setPkHash] = useState<`0x${string}` | undefined>();
@@ -107,9 +129,9 @@ export default function PotPage({ params }: { params: Promise<{ address: string 
     abi: potAbi,
     functionName: "committed",
     args: [viewer!],
+    chainId: viewedId,
     query: { enabled: !!viewer },
   });
-  void factory;
 
   if (!data) return <main className="p-8">Loading pot…</main>;
   const [state, count, size, perPerson, deadline, token, payee, contributors, potTitle] = data.map(
@@ -213,7 +235,7 @@ export default function PotPage({ params }: { params: Promise<{ address: string 
             <button
               onClick={() =>
                 meraAddr
-                  ? pk(() => passkeyCommit(pot, perPerson))
+                  ? pk(() => passkeyCommit(pot, perPerson, viewedId))
                   : act(() =>
                       writeContract({ address: pot, abi: potAbi, functionName: "commit", value: perPerson })
                     )
@@ -228,6 +250,7 @@ export default function PotPage({ params }: { params: Promise<{ address: string 
               pot={pot}
               token={token as `0x${string}`}
               perPerson={perPerson}
+              chainId={viewedId}
               viaPasskey={!!meraAddr}
               pk={pk}
             />
@@ -236,7 +259,7 @@ export default function PotPage({ params }: { params: Promise<{ address: string 
           <button
             onClick={() =>
               meraAddr
-                ? pk(() => passkeyCall(pot, "release"))
+                ? pk(() => passkeyCall(pot, "release", viewedId))
                 : act(() => writeContract({ address: pot, abi: potAbi, functionName: "release" }))
             }
             disabled={isPending || pkBusy}
@@ -249,6 +272,7 @@ export default function PotPage({ params }: { params: Promise<{ address: string 
             pot={pot}
             me={viewer!}
             myCommitted={!!myCommitted}
+            chainId={viewedId}
             viaPasskey={!!meraAddr}
             pk={pk}
           />
@@ -257,7 +281,7 @@ export default function PotPage({ params }: { params: Promise<{ address: string 
             <button
               onClick={() =>
                 meraAddr
-                  ? pk(() => passkeyCall(pot, "refund"))
+                  ? pk(() => passkeyCall(pot, "refund", viewedId))
                   : act(() => writeContract({ address: pot, abi: potAbi, functionName: "refund" }))
               }
               disabled={isPending || pkBusy}
@@ -295,12 +319,14 @@ function Erc20Commit({
   pot,
   token,
   perPerson,
+  chainId,
   viaPasskey,
   pk,
 }: {
   pot: `0x${string}`;
   token: `0x${string}`;
   perPerson: bigint;
+  chainId: AppChainId;
   viaPasskey: boolean;
   pk: (fn: () => Promise<`0x${string}`>) => Promise<void>;
 }) {
@@ -312,6 +338,7 @@ function Erc20Commit({
     abi: erc20Abi,
     functionName: "allowance",
     args: [viewer!, pot],
+    chainId,
     query: { enabled: !!viewer, refetchInterval: 2000 },
   });
   const { isSuccess: txDone } = useWaitForTransactionReceipt({ hash: txHash });
@@ -322,14 +349,14 @@ function Erc20Commit({
   const approve = () =>
     viaPasskey
       ? pk(async () => {
-          const h = await passkeyApprove(token, pot, perPerson);
+          const h = await passkeyApprove(token, pot, perPerson, chainId);
           refetch();
           return h;
         })
       : writeContract({ address: token, abi: erc20Abi, functionName: "approve", args: [pot, perPerson] });
   const commit = () =>
     viaPasskey
-      ? pk(() => passkeyCommit(pot, 0n))
+      ? pk(() => passkeyCommit(pot, 0n, chainId))
       : writeContract({ address: pot, abi: potAbi, functionName: "commit" });
   return ok ? (
     <button
@@ -354,12 +381,14 @@ function ExpireRefund({
   pot,
   me,
   myCommitted,
+  chainId,
   viaPasskey,
   pk,
 }: {
   pot: `0x${string}`;
   me: string;
   myCommitted: boolean;
+  chainId: AppChainId;
   viaPasskey: boolean;
   pk: (fn: () => Promise<`0x${string}`>) => Promise<void>;
 }) {
@@ -367,11 +396,11 @@ function ExpireRefund({
   void me;
   const expire = () =>
     viaPasskey
-      ? pk(() => passkeyCall(pot, "expire"))
+      ? pk(() => passkeyCall(pot, "expire", chainId))
       : writeContract({ address: pot, abi: potAbi, functionName: "expire" });
   const refund = () =>
     viaPasskey
-      ? pk(() => passkeyCall(pot, "refund"))
+      ? pk(() => passkeyCall(pot, "refund", chainId))
       : writeContract({ address: pot, abi: potAbi, functionName: "refund" });
   return (
     <div className="grid gap-2">

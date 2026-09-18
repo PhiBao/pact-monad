@@ -9,6 +9,7 @@ import { EthereumWalletConnectors } from "@dynamic-labs/ethereum";
 import { DynamicWagmiConnector } from "@dynamic-labs/wagmi-connector";
 import { monadMainnet, monadTestnet } from "./monad";
 import { MeraProvider } from "./mera-context";
+import { AppChainProvider } from "./app-chain";
 
 const queryClient = new QueryClient();
 
@@ -30,7 +31,9 @@ function Core({ children }: { children: ReactNode }) {
   return (
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
-        <MeraProvider>{children}</MeraProvider>
+        <MeraProvider>
+          <AppChainProvider>{children}</AppChainProvider>
+        </MeraProvider>
       </QueryClientProvider>
     </WagmiProvider>
   );
