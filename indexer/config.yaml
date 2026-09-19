@@ -5,19 +5,19 @@ name: pact
 description: Conditional group pots — created, committed, tilted, refunded.
 networks:
   - id: 10143 # Monad testnet
-    start_block: 63354945
+    start_block: 63830698
     contracts:
       - name: PactFactory
         address:
-          - "0x4f6aD063f1c20D53a4ea4FA1ba46A8783C782D16"
+          - "0xFD842da1854e40c55F19FE63a879CB65cd3B9A28"
   - id: 143 # Monad mainnet
-    start_block: 105647209
+    start_block: 106125317
     contracts:
       - name: PactFactory
         address:
-          - "0xEF673BDac2C86506874919b1ad05Bd7D7fa64344"
+          - "0xDFEcE74f0aDBa3cc18B065DBA0DEc82bE52AA830"
         events:
-          - event: PotCreated(address indexed pot, address indexed organizer, address indexed payee, address token, uint256 perPerson, uint256 partySize, uint256 deadline, string title)
+          - event: PotCreated(address indexed pot, address indexed organizer, address indexed payee, address token, uint256 perPerson, uint256 partySize, uint256 deadline, string title, bool isPrivate)
       - name: PactPot
         # Pots are EIP-1167 clones; register dynamically from PotCreated.
         # If Envio dynamic-contract registration is unavailable, add pot

@@ -17,9 +17,12 @@ contract PactFactory is Ownable {
     address public feeRecipient;
 
     uint256 public constant MIN_PARTY = 2;
-    uint256 public constant MAX_PARTY = 100;
+    // Deliberately NO upper bounds on party size or duration: no function ever
+    // loops over them (release is one transfer, refunds are per-user pulls),
+    // so a 2-person dinner and a 1,000,000-person fundraiser cost the same to
+    // create. Absurd values fail safely on checked arithmetic, and anyone can
+    // always exit via expire/refund.
     uint256 public constant MIN_DURATION = 1 hours;
-    uint256 public constant MAX_DURATION = 90 days;
     uint256 public constant MAX_TITLE = 120;
 
     address[] public allPots;
@@ -91,9 +94,8 @@ contract PactFactory is Ownable {
         bytes32 secretHash
     ) internal returns (address pot) {
         if (perPerson == 0) revert BadParams();
-        if (partySize < MIN_PARTY || partySize > MAX_PARTY) revert BadParams();
+        if (partySize < MIN_PARTY) revert BadParams();
         if (deadline <= block.timestamp + MIN_DURATION) revert BadParams();
-        if (deadline > block.timestamp + MAX_DURATION) revert BadParams();
         if (payee == address(0)) revert BadParams();
         if (bytes(title).length == 0 || bytes(title).length > MAX_TITLE) revert BadParams();
         if (isPrivate && secretHash == bytes32(0)) revert BadParams();

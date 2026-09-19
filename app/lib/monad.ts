@@ -38,9 +38,19 @@ export function chainFor(chainId: number) {
   return chainId === monadTestnet.id ? monadTestnet : monadMainnet;
 }
 
+// Contract bounds mirror PactFactory (v4). The form validates against these
+// so users get instant feedback instead of a reverted transaction.
+export const POT_BOUNDS = {
+  minParty: 2,
+  maxParty: 10_000,
+  minDays: 1,
+  maxDays: 90,
+  maxTitle: 120,
+} as const;
+
 const FACTORIES = {
-  [monadMainnet.id]: "0x457ae4d9e8CC1bC6bf3babA9133D1fCe283a9ABE",
-  [monadTestnet.id]: "0xDFEcE74f0aDBa3cc18B065DBA0DEc82bE52AA830",
+  [monadMainnet.id]: "0x7F50e78b1763c05F944D898EeCC2081c767b2113",
+  [monadTestnet.id]: "0x910e17CC1Ea45B824E3Be700430E3F2cD29c5a4E",
 } as const satisfies Record<number, `0x${string}`>;
 
 export function factoryFor(chainId: number): `0x${string}` {
@@ -48,8 +58,8 @@ export function factoryFor(chainId: number): `0x${string}` {
 }
 
 const DEPLOY_BLOCKS = {
-  [monadMainnet.id]: 106107408n,
-  [monadTestnet.id]: 63812803n,
+  [monadMainnet.id]: 106125317n,
+  [monadTestnet.id]: 63830698n,
 } as const satisfies Record<number, bigint>;
 
 /** Bounds getLogs scans for "your pots". */

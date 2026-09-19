@@ -234,6 +234,22 @@ contract PactTest is Test {
         assertEq(uint256(uint8(pot.state())), uint256(uint8(PactPot.State.Tilted)));
     }
 
+    function test_no_upper_bounds() public {
+        // A million-person fundraiser and a year-long deadline cost the same
+        // to create as a dinner pot — nothing loops over either value.
+        vm.prank(organizer);
+        address pot = factory.createPot(
+            address(0), 0.01 ether, 1_000_000, block.timestamp + 365 days, organizer, "Gaza charity"
+        );
+        assertEq(PactPot(pot).partySize(), 1_000_000);
+        // Floors still hold: solo pots, free pots, past deadlines.
+        vm.prank(organizer);
+        vm.expectRevert(PactFactory.BadParams.selector);
+        factory.createPot(
+            address(0), 0.01 ether, 1, block.timestamp + 7 days, organizer, "Solo"
+        );
+    }
+
     function test_pots_are_independent() public {
         PactPot p1 = _nativePot(1 ether, 2);
         PactPot p2 = _nativePot(2 ether, 2);

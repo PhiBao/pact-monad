@@ -78,10 +78,14 @@ per address; organizer cannot touch funds pre-tilt; **fee (1%, capped 5%) is rea
 from the factory onchain — callers cannot waive it**; ReentrancyGuard +
 checks-effects throughout; pot titles capped at 120 bytes.
 
-| Chain | Factory (v3) |
+No ceilings by design: party size and duration are unbounded (nothing loops over
+them — a million-person fundraiser costs the same to create as a dinner pot).
+Floors only: ≥2 people, amount above zero, deadline in the future.
+
+| Chain | Factory (v5) |
 |---|---|
-| Monad mainnet (143) | `0x457ae4d9e8CC1bC6bf3babA9133D1fCe283a9ABE` |
-| Monad testnet (10143) | `0xDFEcE74f0aDBa3cc18B065DBA0DEc82bE52AA830` |
+| Monad mainnet (143) | `0xDFEcE74f0aDBa3cc18B065DBA0DEc82bE52AA830` |
+| Monad testnet (10143) | `0xFD842da1854e40c55F19FE63a879CB65cd3B9A28` |
 
 ## Intelligence (TypeSafe, not hype)
 

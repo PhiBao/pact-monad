@@ -11,8 +11,8 @@ import {
   useWriteContract,
   useWaitForTransactionReceipt,
 } from "wagmi";
-import { parseAbiItem, parseEther } from "viem";
-import { ausdAddress } from "../lib/monad";
+import { isAddress, parseAbiItem, parseEther } from "viem";
+import { ausdAddress, POT_BOUNDS } from "../lib/monad";
 import { useAppChain } from "../lib/app-chain";
 import { factoryAbi, potAbi } from "../lib/abi";
 import PasskeyConnect from "../components/PasskeyConnect";
@@ -75,6 +75,27 @@ export default function Home() {
   const [createFallback, setCreateFallback] = useState<string | null>(null);
   const wrongChain = useWrongChain();
   const { guard, checking, guardErr } = useWalletGuard();
+
+  // Floors only — the contract sets no ceilings, so neither do we.
+  const sizeNum = Number(partySize);
+  const sizeErr =
+    !/^\d+$/.test(partySize.trim()) || sizeNum < POT_BOUNDS.minParty
+      ? `At least ${POT_BOUNDS.minParty} people. No upper limit.`
+      : null;
+  const amountErr = !(Number(amount) > 0) ? "Amount must be above zero." : null;
+  const daysNum = Number(days);
+  const daysErr =
+    !/^\d+$/.test(days.trim()) || daysNum < POT_BOUNDS.minDays
+      ? `At least ${POT_BOUNDS.minDays} day.`
+      : null;
+  const payeeErr =
+    payee.trim() && !isAddress(payee.trim()) ? "Payee must be a valid address — or empty for you." : null;
+  const titleErr =
+    title.trim().length > POT_BOUNDS.maxTitle
+      ? `Keep it under ${POT_BOUNDS.maxTitle} characters.`
+      : null;
+  const formValid = !sizeErr && !amountErr && !daysErr && !payeeErr && !titleErr;
+
   const { data: receipt } = useWaitForTransactionReceipt({ hash: hash ?? pkHash });
 
   // Creation confirmed → take the organizer straight to their pot.
@@ -249,15 +270,17 @@ export default function Home() {
                 inputMode="decimal"
                 className="rounded-lg border px-3 py-2"
               />
+              {amountErr && <span className="text-xs text-red-700">{amountErr}</span>}
             </label>
             <label className="grid gap-1 text-sm">
-              Group size (including you)
+              Group size (including you — no upper limit, fundraisers welcome)
               <input
                 value={partySize}
                 onChange={(e) => setPartySize(e.target.value)}
                 inputMode="numeric"
                 className="rounded-lg border px-3 py-2"
               />
+              {sizeErr && <span className="text-xs text-red-700">{sizeErr}</span>}
             </label>
             <label className="grid gap-1 text-sm">
               Deadline (days from now)
@@ -267,6 +290,7 @@ export default function Home() {
                 inputMode="numeric"
                 className="rounded-lg border px-3 py-2"
               />
+              {daysErr && <span className="text-xs text-red-700">{daysErr}</span>}
             </label>
             <label className="grid gap-1 text-sm">
               Payee (defaults to you)
@@ -276,6 +300,7 @@ export default function Home() {
                 placeholder={address}
                 className="rounded-lg border px-3 py-2 font-mono text-xs"
               />
+              {payeeErr && <span className="text-xs text-red-700">{payeeErr}</span>}
             </label>
             <div className="grid gap-1 text-sm">
               <span className="font-medium">Visibility</span>
@@ -306,8 +331,8 @@ export default function Home() {
             </div>
             <button
               onClick={create}
-              disabled={isPending || pkBusy || checking || wrongChain}
-              title={wrongChain ? "Switch network first" : undefined}
+              disabled={isPending || pkBusy || checking || wrongChain || !formValid}
+              title={wrongChain ? "Switch network first" : !formValid ? "Fix the highlighted fields" : undefined}
               className="mt-2 rounded-xl bg-emerald-900 px-6 py-3 font-semibold text-white disabled:opacity-50"
             >
               {isPending || pkBusy || checking
