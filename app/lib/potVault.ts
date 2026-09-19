@@ -13,6 +13,8 @@ export type VaultEntry = {
   role: VaultRole;
   title?: string;
   seenAt: number;
+  /** Hidden from Your pots, but never deleted — always recoverable below. */
+  hidden?: boolean;
 };
 
 const KEY = "wemadeit.pots.v1";
@@ -54,6 +56,9 @@ export function rememberPot(
     title: patch.title ?? prev?.title,
     role: rank(role) >= rank(prev?.role ?? "visited") ? role : prev!.role,
     seenAt: Date.now(),
+    // Any fresh remember clears hidden (re-viewing = "I want this back");
+    // only an explicit hide sets it.
+    hidden: patch.hidden ?? false,
   };
   v[String(chainId)] = c;
   save(v);
@@ -66,15 +71,24 @@ export function vaultEntry(chainId: number, addr: string): VaultEntry | null {
 export function vaultPots(chainId: number): { addr: string; entry: VaultEntry }[] {
   const c = load()[String(chainId)] ?? {};
   return Object.entries(c)
+    .filter(([, entry]) => !entry.hidden)
     .map(([addr, entry]) => ({ addr, entry }))
     .sort((a, b) => b.entry.seenAt - a.entry.seenAt);
 }
 
+/** Hide from Your pots without deleting — recoverable via hiddenPots. */
 export function forgetPot(chainId: number, addr: string) {
-  const v = load();
-  const c = v[String(chainId)];
-  if (c) {
-    delete c[addr.toLowerCase()];
-    save(v);
-  }
+  rememberPot(chainId, addr, { hidden: true });
+}
+
+export function unhidePot(chainId: number, addr: string) {
+  rememberPot(chainId, addr, { hidden: false });
+}
+
+export function hiddenPots(chainId: number): { addr: string; entry: VaultEntry }[] {
+  const c = load()[String(chainId)] ?? {};
+  return Object.entries(c)
+    .filter(([, entry]) => entry.hidden)
+    .map(([addr, entry]) => ({ addr, entry }))
+    .sort((a, b) => b.entry.seenAt - a.entry.seenAt);
 }

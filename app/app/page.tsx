@@ -22,7 +22,7 @@ import { ChainGuard, useWrongChain } from "../components/ChainGuard";
 import { dynamicEnabled } from "../lib/wagmi";
 import { parsePotText, type PotProposal } from "../lib/assist";
 import VisibilityBadge from "../components/VisibilityBadge";
-import { forgetPot, rememberPot, vaultEntry, vaultPots } from "../lib/potVault";
+import { forgetPot, hiddenPots, rememberPot, unhidePot, vaultEntry, vaultPots } from "../lib/potVault";
 import { potFromReceipt } from "../lib/potFromReceipt";
 import { newSecret, secretHash } from "../lib/inviteSecret";
 import { useWalletGuard } from "../lib/walletGuard";
@@ -411,14 +411,17 @@ function YourPots({
         })
         .then((ls) => {
           const scanned = ls.map((l) => (l.args as unknown as { pot: string }).pot.toLowerCase());
-          setMine([...new Set([...scanned, ...vaulted])].reverse());
+          const hidden = new Set(hiddenPots(chainId).map((h) => h.addr));
+          setMine([...new Set([...scanned, ...vaulted])].reverse().filter((a) => !hidden.has(a)));
         })
         .catch(() => setMine(vaulted));
     };
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client, factory, viewer, deployBlock, chainId, vaultTick]);
-  if (!viewer || mine.length === 0) return null;
+  const [showHidden, setShowHidden] = useState(false);
+  const hidden = viewer ? hiddenPots(chainId) : [];
+  if (!viewer || (mine.length === 0 && hidden.length === 0)) return null;
   return (
     <>
       <h2 className="text-xl font-bold">Your pots ({mine.length})</h2>
@@ -435,6 +438,42 @@ function YourPots({
           />
         ))}
       </ul>
+      {hidden.length > 0 && (
+        <div className="mt-2">
+          <button
+            onClick={() => setShowHidden((v) => !v)}
+            className="text-xs text-gray-500 underline"
+          >
+            {showHidden ? "Hide hidden pots" : `Hidden pots (${hidden.length}) — nothing is ever deleted`}
+          </button>
+          {showHidden && (
+            <ul className="mt-2 grid gap-2 opacity-80">
+              {hidden.map(({ addr, entry }) => (
+                <li
+                  key={addr}
+                  className="flex items-center justify-between gap-2 rounded-xl border border-dashed bg-white px-4 py-2"
+                >
+                  <span className="min-w-0">
+                    <strong className="block truncate text-sm">
+                      {entry.title ?? "Untitled pot"}
+                    </strong>
+                    <span className="block truncate font-mono text-[11px] text-gray-400">{addr}</span>
+                  </span>
+                  <button
+                    onClick={() => {
+                      unhidePot(chainId, addr);
+                      setVaultTick((t) => t + 1);
+                    }}
+                    className="shrink-0 rounded-lg border px-3 py-1 text-xs font-semibold"
+                  >
+                    Unhide
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </>
   );
 }
