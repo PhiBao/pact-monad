@@ -400,15 +400,20 @@ function YourPots({
         setMine(vaulted);
         return;
       }
-      client
-        .getLogs({
+      // NOTE: this signature must match the factory's PotCreated event exactly
+      // (topic0 is the full signature hash) — a stale field list silently
+      // matches nothing, which once made organizer pots vault-only.
+      const fetchOrganized = () =>
+        client.getLogs({
           address: factory,
           event: parseAbiItem(
-            "event PotCreated(address indexed pot, address indexed organizer, address indexed payee, address token, uint256 perPerson, uint256 partySize, uint256 deadline, string title)"
+            "event PotCreated(address indexed pot, address indexed organizer, address indexed payee, address token, uint256 perPerson, uint256 partySize, uint256 deadline, string title, bool isPrivate)"
           ),
           args: { organizer: viewer },
           fromBlock: deployBlock,
-        })
+        });
+      fetchOrganized()
+        .catch(() => fetchOrganized()) // one retry: a single RPC hiccup must not blank Your pots
         .then((ls) => {
           const scanned = ls.map((l) => (l.args as unknown as { pot: string }).pot.toLowerCase());
           const hidden = new Set(hiddenPots(chainId).map((h) => h.addr));
