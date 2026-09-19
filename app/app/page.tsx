@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   useAccount,
@@ -339,17 +339,13 @@ export default function Home() {
 
       <section className="mt-8">
         <h2 className="text-xl font-bold">
-          Recent public pots {potCount !== undefined ? `(${potCount.toString()} total)` : ""}
+          Public pots {potCount !== undefined ? `(${potCount.toString()} total)` : ""}
         </h2>
         <p className="mt-1 text-xs text-gray-600">
-          Invite-only pots never appear here — only their organizers see them above.
+          Anyone can join these. Invite-only pots never appear here — only their
+          organizers see them above.
         </p>
-        <RecentPots
-          factory={factory}
-          count={potCount}
-          chainId={appChainId}
-          onOpen={(a) => router.push(`/pot/${a}`)}
-        />
+        <PublicFeed factory={factory} count={potCount} chainId={appChainId} />
       </section>
     </main>
   );
@@ -440,26 +436,38 @@ function OwnPotCard({ pot, chainId }: { pot: `0x${string}`; chainId: 143 | 10143
   );
 }
 
-function RecentPots({
+type FeedCard = {
+  addr: string;
+  title: string;
+  count: bigint;
+  size: bigint;
+  state: number;
+};
+
+/** The single public discovery feed: search + status filter over recent pots.
+ *  Invite-only pots are excluded at the data layer, never rendered. */
+function PublicFeed({
   factory,
   count,
   chainId,
-  onOpen,
 }: {
   factory: `0x${string}`;
   count: bigint | undefined;
   chainId: 143 | 10143;
-  onOpen: (a: string) => void;
 }) {
+  const router = useRouter();
   const n = count === undefined ? 0 : Number(count);
   const [addrs, setAddrs] = useState<string[]>([]);
+  const [q, setQ] = useState("");
+  const [filter, setFilter] = useState<"all" | "filling" | "tilted">("all");
   const client = usePublicClient({ chainId });
+
   useEffect(() => {
     if (!client || n === 0) {
       setAddrs([]);
       return;
     }
-    const start = Math.max(0, n - 10);
+    const start = Math.max(0, n - 30);
     const idx = Array.from({ length: n - start }, (_, i) => BigInt(start + i));
     Promise.all(
       idx.map((i) =>
@@ -469,92 +477,106 @@ function RecentPots({
       .then((a) => setAddrs((a as string[]).reverse()))
       .catch(() => setAddrs([]));
   }, [client, factory, n]);
-  if (n === 0) return <p className="mt-2 text-sm">No pots yet — start the first one.</p>;
-  return <PotCards factory={factory} addrs={addrs} chainId={chainId} onOpen={onOpen} />;
-}
 
-/** Titled cards with live progress. Global scope — "Your pots" filters above. */
-function PotCards({
-  factory,
-  addrs,
-  chainId,
-  onOpen,
-}: {
-  factory: `0x${string}`;
-  addrs: string[];
-  chainId: 143 | 10143;
-  onOpen?: (a: string) => void;
-}) {
-  void factory;
-  if (addrs.length === 0) return <p className="mt-2 text-sm">Loading…</p>;
-  return (
-    <ul className="mt-3 grid gap-2">
-      {addrs.map((a) => (
-        <PotCard key={a} pot={a as `0x${string}`} chainId={chainId} onOpen={onOpen} />
-      ))}
-    </ul>
-  );
-}
-
-function PotCard({
-  pot,
-  chainId,
-  onOpen,
-}: {
-  pot: `0x${string}`;
-  chainId: 143 | 10143;
-  onOpen?: (a: string) => void;
-}) {
-  const router = useRouter();
-  const open = onOpen ?? ((a: string) => router.push(`/pot/${a}`));
   const { data } = useReadContracts({
-    contracts: (["title", "commitCount", "partySize", "state", "isPrivate"] as const).map(
-      (functionName) => ({
-        address: pot,
-        abi: potAbi,
-        functionName,
-        chainId,
-      })
-    ),
+    contracts: addrs.flatMap((a) => [
+      { address: a as `0x${string}`, abi: potAbi, functionName: "title", chainId },
+      { address: a as `0x${string}`, abi: potAbi, functionName: "commitCount", chainId },
+      { address: a as `0x${string}`, abi: potAbi, functionName: "partySize", chainId },
+      { address: a as `0x${string}`, abi: potAbi, functionName: "state", chainId },
+      { address: a as `0x${string}`, abi: potAbi, functionName: "isPrivate", chainId },
+    ]),
+    query: { enabled: addrs.length > 0 },
   });
-  const [title, count, size, state, priv] = (data?.map((d) => d.result) ?? []) as [
-    string | undefined,
-    bigint | undefined,
-    bigint | undefined,
-    number | undefined,
-    boolean | undefined,
-  ];
-  if (priv) return null; // invite-only pots never appear in the public feed
-  const pct =
-    count !== undefined && size !== undefined && size > 0n
-      ? `${(Number(count) / Number(size)) * 100}%`
-      : "0%";
+
+  const cards: FeedCard[] = useMemo(() => {
+    if (!data) return [];
+    const out: FeedCard[] = [];
+    for (let i = 0; i < addrs.length; i++) {
+      const r = data.slice(i * 5, i * 5 + 5).map((d) => d.result) as [
+        string | undefined,
+        bigint | undefined,
+        bigint | undefined,
+        number | undefined,
+        boolean | undefined,
+      ];
+      if (r[4]) continue; // invite-only stays out of the public feed
+      out.push({
+        addr: addrs[i],
+        title: r[0] ?? "Untitled",
+        count: r[1] ?? 0n,
+        size: r[2] ?? 0n,
+        state: r[3] ?? 0,
+      });
+    }
+    return out;
+  }, [data, addrs]);
+
+  const shown = cards.filter((c) => {
+    if (filter === "filling" && !(c.state === 0 && c.count < c.size)) return false;
+    if (filter === "tilted" && c.state !== 1) return false;
+    if (q && !c.title.toLowerCase().includes(q.toLowerCase())) return false;
+    return true;
+  });
+
+  if (n === 0) return <p className="mt-2 text-sm">No pots yet — start the first one.</p>;
+
   return (
-    <li>
-      <button
-        onClick={() => open(pot)}
-        className="w-full rounded-xl border bg-white px-4 py-3 text-left shadow-sm hover:border-emerald-900"
-      >
-        <span className="flex items-center justify-between gap-2">
-          <strong>{title ?? "Loading…"}</strong>
-          <span className="flex items-center gap-2">
-            <VisibilityBadge isPrivate={false} />
-            {state === 1 && <span>🎉</span>}
-            {state === 2 && <span className="text-xs text-gray-500">refunding</span>}
-          </span>
-        </span>
-        {count !== undefined && size !== undefined && (
-          <>
-            <span className="text-sm text-gray-600">
-              {count.toString()}/{size.toString()} committed
-            </span>
-            <span className="mt-1 block h-2 overflow-hidden rounded-full bg-gray-200">
-              <span className="block h-full rounded-full bg-emerald-700" style={{ width: pct }} />
-            </span>
-          </>
-        )}
-        <span className="mt-1 block font-mono text-[11px] text-gray-400">{pot}</span>
-      </button>
-    </li>
+    <div>
+      <div className="mt-3 flex gap-2">
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search by name…"
+          className="w-full rounded-lg border bg-white px-3 py-2"
+        />
+        {(["all", "filling", "tilted"] as const).map((f) => (
+          <button
+            key={f}
+            onClick={() => setFilter(f)}
+            className={`rounded-lg border bg-white px-3 py-2 text-sm font-semibold capitalize ${filter === f ? "border-emerald-900 bg-emerald-50" : ""}`}
+          >
+            {f}
+          </button>
+        ))}
+      </div>
+      {addrs.length === 0 || !data ? (
+        <p className="mt-3 text-sm">Loading…</p>
+      ) : shown.length === 0 ? (
+        <p className="mt-3 text-sm">Nothing matches. Try another search.</p>
+      ) : (
+        <ul className="mt-3 grid gap-2">
+          {shown.map((c) => (
+            <li key={c.addr}>
+              <button
+                onClick={() => router.push(`/pot/${c.addr}`)}
+                className="w-full rounded-xl border bg-white px-4 py-3 text-left shadow-sm hover:border-emerald-900"
+              >
+                <span className="flex items-center justify-between gap-2">
+                  <strong>{c.title}</strong>
+                  <span className="flex items-center gap-2">
+                    <VisibilityBadge isPrivate={false} />
+                    {c.state === 1 && <span>🎉</span>}
+                    {c.state === 2 && <span className="text-xs text-gray-500">refunding</span>}
+                  </span>
+                </span>
+                <span className="text-sm text-gray-600">
+                  {c.count.toString()}/{c.size.toString()} committed
+                </span>
+                <span className="mt-1 block h-2 overflow-hidden rounded-full bg-gray-200">
+                  <span
+                    className="block h-full rounded-full bg-emerald-700"
+                    style={{
+                      width: c.size > 0n ? `${(Number(c.count) / Number(c.size)) * 100}%` : "0%",
+                    }}
+                  />
+                </span>
+                <span className="mt-1 block font-mono text-[11px] text-gray-400">{c.addr}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }

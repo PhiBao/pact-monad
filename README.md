@@ -64,8 +64,8 @@ indexer/        Envio config + GraphQL schema
 
 ## Contracts (Sourcify `exact_match`, both chains)
 
-**Browse:** `/browse` — search + filter over public pots (invite-only pots never
-listed; titles stay public onchain, joining requires the key).
+**Discovery:** the home feed is search + filter over public pots (invite-only
+pots never listed; titles stay public onchain, joining requires the key).
 
 State machine: `commit()` → full? `release()` (permissionless, pays organizer) :
 deadline passes? `expire()` → `refund()` (pull pattern, per contributor).
