@@ -64,17 +64,24 @@ indexer/        Envio config + GraphQL schema
 
 ## Contracts (Sourcify `exact_match`, both chains)
 
-| Chain | Factory (v2) |
-|---|---|
-| Monad mainnet (143) | `0xEF673BDac2C86506874919b1ad05Bd7D7fa64344` |
-| Monad testnet (10143) | `0x4f6aD063f1c20D53a4ea4FA1ba46A8783C782D16` |
+**Browse:** `/browse` — search + filter over public pots (invite-only pots never
+listed; titles stay public onchain, joining requires the key).
 
 State machine: `commit()` → full? `release()` (permissionless, pays organizer) :
 deadline passes? `expire()` → `refund()` (pull pattern, per contributor).
-Security properties, all covered by `forge test` (**9/9 green**): one commit per
-address; organizer cannot touch funds pre-tilt; **fee (1%, capped 5%) is read from
-the factory onchain — callers cannot waive it**; ReentrancyGuard + checks-effects
-throughout; pot titles capped at 120 bytes.
+**Visibility (v3):** public pots join via `commit()`; invite-only pots enforce
+`commitWithSecret()` — the secret lives in the share-link `#fragment` (never
+sent to servers), the chain stores only its hash. Verified on testnet: open
+commit reverts (`PrivateUseSecret`), keyed commit lands.
+Security properties, all covered by `forge test` (**14/14 green**): one commit
+per address; organizer cannot touch funds pre-tilt; **fee (1%, capped 5%) is read
+from the factory onchain — callers cannot waive it**; ReentrancyGuard +
+checks-effects throughout; pot titles capped at 120 bytes.
+
+| Chain | Factory (v3) |
+|---|---|
+| Monad mainnet (143) | `0x457ae4d9e8CC1bC6bf3babA9133D1fCe283a9ABE` |
+| Monad testnet (10143) | `0xDFEcE74f0aDBa3cc18B065DBA0DEc82bE52AA830` |
 
 ## Intelligence (TypeSafe, not hype)
 
