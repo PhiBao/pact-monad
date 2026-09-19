@@ -8,9 +8,10 @@ import { useMera } from "../../../lib/mera-context";
 import { ChainGuard } from "../../../components/ChainGuard";
 import DynamicLogin from "../../../components/DynamicLogin";
 import { dynamicEnabled } from "../../../lib/wagmi";
-import { passkeyApprove, passkeyCommit, passkeyCommitSecret, passkeyCall } from "../../../lib/pactWrite";
-import { secretFromUrl, shareUrl } from "../../../lib/inviteSecret";
+import { passkeyApprove, passkeyCommit, passkeyCommitSecret, passkeyCall, pactPublic } from "../../../lib/pactWrite";
+import { newSecret, secretFromUrl, secretHash, shareUrl } from "../../../lib/inviteSecret";
 import { rememberPot, vaultEntry } from "../../../lib/potVault";
+import { ensureWalletChain } from "../../../lib/walletGuard";
 import { useWalletGuard } from "../../../lib/walletGuard";
 import { scorePotLegit } from "../../../lib/assist";
 
@@ -62,7 +63,7 @@ import { chainFor } from "../../../lib/monad";
 const ZERO = "0x0000000000000000000000000000000000000000";
 
 function usePot(address: `0x${string}`, chainId: AppChainId) {
-  const c = (functionName: "state" | "commitCount" | "partySize" | "perPerson" | "deadline" | "token" | "payee" | "contributors" | "title" | "isPrivate") =>
+  const c = (functionName: "state" | "commitCount" | "partySize" | "perPerson" | "deadline" | "token" | "payee" | "organizer" | "contributors" | "title" | "isPrivate") =>
     ({ address, abi: potAbi, functionName, chainId }) as const;
   return useReadContracts({
     contracts: [
@@ -73,6 +74,7 @@ function usePot(address: `0x${string}`, chainId: AppChainId) {
       c("deadline"),
       c("token"),
       c("payee"),
+      c("organizer"),
       c("contributors"),
       c("title"),
       c("isPrivate"),
@@ -152,7 +154,7 @@ export default function PotPage({ params }: { params: Promise<{ address: string 
     rememberPot(viewedId, pot, fromUrl ? { secret: fromUrl } : {});
   }, [pot, viewedId]);
   if (!data) return <main className="p-8">Loading pot…</main>;
-  const [state, count, size, perPerson, deadline, token, payee, contributors, potTitle, priv] =
+  const [state, count, size, perPerson, deadline, token, payee, org, contributors, potTitle, priv] =
     data.map((d) => d.result) as [
       number,
       bigint,
@@ -161,11 +163,13 @@ export default function PotPage({ params }: { params: Promise<{ address: string 
       bigint,
       string,
       string,
+      string | undefined,
       string[],
       string,
       boolean,
     ];
   const locked = !!priv;
+  const isOrganizer = !!viewer && !!org && viewer.toLowerCase() === org.toLowerCase();
   // Pre-title pots (v1) have no title() — fall back to stake × size.
   const displayTitle =
     potTitle ||
@@ -314,10 +318,13 @@ export default function PotPage({ params }: { params: Promise<{ address: string 
           myCommitted ? (
             <p className="font-semibold text-emerald-800">You&apos;re in ✓ — share the link to fill the rest.</p>
           ) : locked && !inviteSecret ? (
-            <p className="text-sm text-amber-800">
-              🔒 This is an invite-only pot. Ask the organizer for the invite link — open
-              commits are rejected onchain.
-            </p>
+            <NoKeyNotice
+              pot={pot}
+              isOrganizer={isOrganizer}
+              viewedId={viewedId}
+              viaPasskey={!!meraAddr}
+              onRotated={(s) => setInviteSecret(s)}
+            />
           ) : isNative ? (
             <button
               onClick={() =>
@@ -559,6 +566,113 @@ function ExpireRefund({
       </div>
       {guardErr && <p className="text-sm text-amber-800">{guardErr}</p>}
     </div>
+  );
+}
+
+/**
+ * Shown when a logged-in viewer faces a private pot without its invite key.
+ * If you can see this page you hold *a* link — but joining needs the key
+ * fragment (#s=…), which chat apps and careless copies often strip. So the
+ * message names the actual problem per role instead of blaming access.
+ */
+function NoKeyNotice({
+  pot,
+  isOrganizer,
+  viewedId,
+  viaPasskey,
+  onRotated,
+}: {
+  pot: `0x${string}`;
+  isOrganizer: boolean;
+  viewedId: AppChainId;
+  viaPasskey: boolean;
+  onRotated: (s: `0x${string}`) => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const [rotating, setRotating] = useState(false);
+  const [rotErr, setRotErr] = useState<string | null>(null);
+  const { writeContractAsync } = useWriteContract();
+  const stored = vaultEntry(viewedId, pot)?.secret ?? null;
+
+  const copyStored = () => {
+    if (!stored || typeof window === "undefined") return;
+    navigator.clipboard.writeText(shareUrl(pot, stored));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const rotate = async () => {
+    const s = newSecret();
+    const h = secretHash(s);
+    setRotating(true);
+    setRotErr(null);
+    try {
+      let hash: `0x${string}`;
+      if (viaPasskey) {
+        hash = await passkeyCall(pot, "rotateSecret", viewedId, [h]);
+      } else {
+        await ensureWalletChain(viewedId);
+        hash = await writeContractAsync({
+          address: pot,
+          abi: potAbi,
+          functionName: "rotateSecret",
+          args: [h],
+        });
+      }
+      await pactPublic(viewedId).waitForTransactionReceipt({ hash });
+      rememberPot(viewedId, pot, { secret: s });
+      onRotated(s);
+    } catch (e) {
+      setRotErr(e instanceof Error ? e.message.slice(0, 160) : "Rotation failed — try again.");
+    } finally {
+      setRotating(false);
+    }
+  };
+
+  if (isOrganizer && stored) {
+    return (
+      <div className="grid gap-2 text-sm">
+        <p className="font-semibold">🔒 You organized this pot — it&apos;s waiting on its invite key.</p>
+        <p className="text-gray-600">
+          This device still holds your original link. Copy it and share the full version (it ends with{" "}
+          <code>#s=…</code>).
+        </p>
+        <button
+          onClick={copyStored}
+          className="rounded-xl bg-emerald-900 px-6 py-3 font-semibold text-white"
+        >
+          {copied ? "Invite link copied ✓" : "Copy invite link"}
+        </button>
+      </div>
+    );
+  }
+
+  if (isOrganizer) {
+    return (
+      <div className="grid gap-2 text-sm">
+        <p className="font-semibold">🔒 You organized this pot, but this device doesn&apos;t hold its invite key.</p>
+        <p className="text-gray-600">
+          Open your original invite link to restore it — or issue a fresh one below. Rotating
+          invalidates every previously shared link; committed funds are untouched.
+        </p>
+        <button
+          onClick={rotate}
+          disabled={rotating}
+          className="rounded-xl bg-emerald-900 px-6 py-3 font-semibold text-white disabled:opacity-50"
+        >
+          {rotating ? "Issuing new link…" : "Generate a new invite link"}
+        </button>
+        {rotErr && <p className="text-red-700">{rotErr}</p>}
+      </div>
+    );
+  }
+
+  return (
+    <p className="text-sm text-amber-800">
+      🔒 This invite link is missing its key — a working invite ends with <code>#s=…</code>. Ask the
+      organizer to resend the full link. (Opening this page alone was never enough; joining
+      requires the key, verified onchain.)
+    </p>
   );
 }
 

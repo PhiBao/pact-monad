@@ -91,6 +91,13 @@ export const potAbi = [
   },
   {
     type: "function",
+    name: "rotateSecret",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "newHash", type: "bytes32" }],
+    outputs: [],
+  },
+  {
+    type: "function",
     name: "isPrivate",
     stateMutability: "view",
     inputs: [],

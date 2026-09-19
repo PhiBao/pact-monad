@@ -356,7 +356,10 @@ export default function Home() {
       </section>
 
       <section className="mt-8">
-        <PublicFeed chainId={appChainId} />
+        <PublicFeed
+          chainId={appChainId}
+          viewer={(address ?? meraAddr) as `0x${string}` | undefined}
+        />
       </section>
     </main>
   );
@@ -564,7 +567,13 @@ type FeedCard = {
 /** The single public discovery feed: search + status filter over every factory
  *  generation. Invite-only pots are excluded at the data layer, never
  *  rendered. Reads tolerate pre-title/pre-privacy pots (v1/v2) via fallbacks. */
-function PublicFeed({ chainId }: { chainId: 143 | 10143 }) {
+function PublicFeed({
+  chainId,
+  viewer,
+}: {
+  chainId: 143 | 10143;
+  viewer: `0x${string}` | undefined;
+}) {
   const router = useRouter();
   const { history } = useAppChain();
   const [addrs, setAddrs] = useState<string[]>([]);
@@ -606,7 +615,7 @@ function PublicFeed({ chainId }: { chainId: 143 | 10143 }) {
       });
   }, [client, history, chainId]);
 
-  const FIELDS = ["title", "commitCount", "partySize", "state", "isPrivate", "perPerson", "token"] as const;
+  const FIELDS = ["title", "commitCount", "partySize", "state", "isPrivate", "perPerson", "token", "organizer"] as const;
   const { data } = useReadContracts({
     contracts: addrs.flatMap((a) =>
       FIELDS.map((functionName) => ({ address: a as `0x${string}`, abi: potAbi, functionName, chainId }))
@@ -626,8 +635,11 @@ function PublicFeed({ chainId }: { chainId: 143 | 10143 }) {
         boolean | undefined,
         bigint | undefined,
         string | undefined,
+        string | undefined,
       ];
       if (r[4]) continue; // invite-only stays out of the public feed
+      // Your own pots live in Your pots — Public is for discovery, not duplicates.
+      if (viewer && typeof r[7] === "string" && r[7].toLowerCase() === viewer.toLowerCase()) continue;
       const size = r[2] ?? 0n;
       out.push({
         addr: addrs[i],
@@ -642,7 +654,7 @@ function PublicFeed({ chainId }: { chainId: 143 | 10143 }) {
       });
     }
     return out;
-  }, [data, addrs]);
+  }, [data, addrs, viewer]);
 
   const shown = cards.filter((c) => {
     if (filter === "filling" && !(c.state === 0 && c.count < c.size)) return false;

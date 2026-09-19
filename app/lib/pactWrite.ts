@@ -101,7 +101,7 @@ export async function passkeyApprove(
 
 export async function passkeyCall(
   pot: `0x${string}`,
-  fn: "release" | "expire" | "refund",
+  fn: "release" | "expire" | "refund" | "rotateSecret",
   chainId: number,
   args?: readonly unknown[]
 ) {

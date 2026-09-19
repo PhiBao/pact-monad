@@ -44,6 +44,7 @@ contract PactPot is ReentrancyGuard {
     event Tilted(address indexed pot, uint256 total);
     event RefundingOpened(address indexed pot);
     event Refunded(address indexed pot, address indexed user, uint256 amount);
+    event SecretRotated(address indexed pot);
 
     error AlreadyInitialized();
     error NotFactory();
@@ -58,6 +59,8 @@ contract PactPot is ReentrancyGuard {
     error TransferFailed();
     error PrivateUseSecret();
     error BadSecret();
+    error NotOrganizer();
+    error NotPrivate();
 
     bool private _initialized;
 
@@ -129,6 +132,17 @@ contract PactPot is ReentrancyGuard {
         commitCount = index + 1;
 
         emit Committed(address(this), msg.sender, index);
+    }
+
+    /// @notice Replace the invite secret (organizer only). Committed funds are
+    ///         untouched; only future joins use the new key. Recovery path when
+    ///         the old link is lost or leaked.
+    function rotateSecret(bytes32 newHash) external {
+        if (msg.sender != organizer) revert NotOrganizer();
+        if (!isPrivate) revert NotPrivate();
+        if (newHash == bytes32(0)) revert BadSecret();
+        secretHash = newHash;
+        emit SecretRotated(address(this));
     }
 
     /// @notice Release all funds to payee once full. Permissionless (anyone may trigger).

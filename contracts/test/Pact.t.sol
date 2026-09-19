@@ -223,6 +223,28 @@ contract PactTest is Test {
         );
     }
 
+    function test_organizer_rotates_secret() public {
+        (PactPot pot, bytes memory secret) = _privatePot();
+        vm.prank(alice);
+        pot.commitWithSecret{value: 1 ether}(secret);
+
+        bytes memory rotated = abi.encodePacked("brand-new-invite-key");
+        vm.prank(bob);
+        vm.expectRevert(PactPot.NotOrganizer.selector);
+        pot.rotateSecret(keccak256(rotated));
+
+        vm.prank(organizer);
+        pot.rotateSecret(keccak256(rotated));
+
+        // Old key is dead, new key admits.
+        vm.prank(bob);
+        vm.expectRevert(PactPot.BadSecret.selector);
+        pot.commitWithSecret{value: 1 ether}(secret);
+        vm.prank(bob);
+        pot.commitWithSecret{value: 1 ether}(rotated);
+        assertEq(pot.commitCount(), 2);
+    }
+
     function test_public_pot_still_uses_plain_commit() public {
         PactPot pot = _nativePot(1 ether, 2);
         assertFalse(pot.isPrivate());
