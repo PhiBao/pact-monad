@@ -24,6 +24,8 @@ contract PactPot is ReentrancyGuard {
     }
 
     string public title;
+    bool public isPrivate;
+    bytes32 public secretHash; // keccak256(secret); zero for public pots
     address public factory;
     address public organizer;
     address public payee;
@@ -54,6 +56,8 @@ contract PactPot is ReentrancyGuard {
     error NotRefunding();
     error NothingToRefund();
     error TransferFailed();
+    error PrivateUseSecret();
+    error BadSecret();
 
     bool private _initialized;
 
@@ -70,11 +74,15 @@ contract PactPot is ReentrancyGuard {
         uint256 perPerson_,
         uint256 partySize_,
         uint256 deadline_,
-        string calldata title_
+        string calldata title_,
+        bool isPrivate_,
+        bytes32 secretHash_
     ) external {
         if (_initialized) revert AlreadyInitialized();
         _initialized = true;
         title = title_;
+        isPrivate = isPrivate_;
+        secretHash = secretHash_;
         factory = msg.sender;
         organizer = organizer_;
         payee = payee_;
@@ -86,7 +94,23 @@ contract PactPot is ReentrancyGuard {
     }
 
     /// @notice Commit one share. Native: send exact perPerson. ERC20: approve first.
+    /// @dev Reverts on private pots — join via commitWithSecret instead.
     function commit() external payable nonReentrant {
+        if (isPrivate) revert PrivateUseSecret();
+        _commit();
+    }
+
+    /// @notice Join a private pot by proving the invite secret (in the share link).
+    function commitWithSecret(bytes calldata secret) external payable nonReentrant {
+        if (!isPrivate) {
+            _commit();
+            return;
+        }
+        if (secret.length == 0 || keccak256(secret) != secretHash) revert BadSecret();
+        _commit();
+    }
+
+    function _commit() internal {
         if (state != State.Open) revert NotOpen();
         if (block.timestamp >= deadline) revert Expired();
         if (committed[msg.sender]) revert AlreadyCommitted();

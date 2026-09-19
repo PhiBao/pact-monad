@@ -22,6 +22,7 @@ import { ChainGuard, useWrongChain } from "../components/ChainGuard";
 import { dynamicEnabled } from "../lib/wagmi";
 import { parsePotText, type PotProposal } from "../lib/assist";
 import { potFromReceipt } from "../lib/potFromReceipt";
+import { newSecret, secretHash } from "../lib/inviteSecret";
 import { useWalletGuard } from "../lib/walletGuard";
 
 const ZERO = "0x0000000000000000000000000000000000000000" as const;
@@ -42,6 +43,8 @@ export default function Home() {
   const [nlText, setNlText] = useState("");
   const [proposal, setProposal] = useState<PotProposal | null>(null);
   const [parsing, setParsing] = useState(false);
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [secret, setSecret] = useState<`0x${string}` | null>(null);
 
   const describe = async () => {
     if (nlText.trim().length < 4) return;
@@ -72,12 +75,13 @@ export default function Home() {
   const { data: receipt } = useWaitForTransactionReceipt({ hash: hash ?? pkHash });
 
   // Creation confirmed → take the organizer straight to their pot.
+  // Private pots carry the invite secret in the link fragment (never the query).
   useEffect(() => {
     if (!receipt || !factory) return;
     const pot = potFromReceipt(receipt, factory);
     if (pot) {
       setRedirecting(true);
-      router.push(`/pot/${pot}`);
+      router.push(isPrivate && secret ? `/pot/${pot}#s=${secret}` : `/pot/${pot}`);
     } else {
       setCreateFallback(hash ?? pkHash ?? null);
     }
@@ -103,6 +107,7 @@ export default function Home() {
       deadline,
       payee: me,
       title: (title.trim() || "Group pot").slice(0, 120),
+      ...(isPrivate && secret ? { isPrivate: true as const, secretHash: secretHash(secret) } : {}),
     };
     if (meraAddr) {
       setPkBusy(true);
@@ -115,6 +120,17 @@ export default function Home() {
       } finally {
         setPkBusy(false);
       }
+      return;
+    }
+    if (args.isPrivate) {
+      guard(() =>
+        writeContract({
+          address: factory,
+          abi: factoryAbi,
+          functionName: "createPot",
+          args: [args.token, args.perPerson, args.partySize, args.deadline, args.payee, args.title, true, args.secretHash!],
+        })
+      );
       return;
     }
     guard(() =>
@@ -242,6 +258,33 @@ export default function Home() {
                 className="rounded-lg border px-3 py-2 font-mono text-xs"
               />
             </label>
+            <div className="grid gap-1 text-sm">
+              <span className="font-medium">Visibility</span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsPrivate(false)}
+                  className={`flex-1 rounded-lg border px-3 py-2 font-semibold ${!isPrivate ? "border-emerald-900 bg-emerald-50" : ""}`}
+                >
+                  🌍 Public
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!secret) setSecret(newSecret());
+                    setIsPrivate(true);
+                  }}
+                  className={`flex-1 rounded-lg border px-3 py-2 font-semibold ${isPrivate ? "border-emerald-900 bg-emerald-50" : ""}`}
+                >
+                  🔒 Invite-only
+                </button>
+              </div>
+              <p className="text-xs text-gray-600">
+                {isPrivate
+                  ? "Only people with your invite link can join — enforced onchain. Titles stay public; money doesn't move without the link."
+                  : "Anyone with the link (or browsing) can join."}
+              </p>
+            </div>
             <button
               onClick={create}
               disabled={isPending || pkBusy || checking || wrongChain}
@@ -332,8 +375,51 @@ function YourPots({
   return (
     <>
       <h2 className="text-xl font-bold">Your pots ({mine.length})</h2>
-      <PotCards factory={factory} addrs={mine} chainId={chainId} />
+      <ul className="mt-3 grid gap-2">
+        {mine.map((a) => (
+          <OwnPotCard key={a} pot={a as `0x${string}`} chainId={chainId} />
+        ))}
+      </ul>
     </>
+  );
+}
+
+function OwnPotCard({ pot, chainId }: { pot: `0x${string}`; chainId: 143 | 10143 }) {
+  const router = useRouter();
+  const { data } = useReadContracts({
+    contracts: (["title", "commitCount", "partySize", "state", "isPrivate"] as const).map(
+      (functionName) => ({ address: pot, abi: potAbi, functionName, chainId })
+    ),
+  });
+  const [title, count, size, state, priv] = (data?.map((d) => d.result) ?? []) as [
+    string | undefined,
+    bigint | undefined,
+    bigint | undefined,
+    number | undefined,
+    boolean | undefined,
+  ];
+  return (
+    <li>
+      <button
+        onClick={() => router.push(`/pot/${pot}`)}
+        className="w-full rounded-xl border bg-white px-4 py-3 text-left shadow-sm hover:border-emerald-900"
+      >
+        <span className="flex items-center justify-between gap-2">
+          <strong>
+            {priv && <span title="Invite-only">🔒 </span>}
+            {title ?? "Loading…"}
+          </strong>
+          {state === 1 && <span>🎉</span>}
+          {state === 2 && <span className="text-xs text-gray-500">refunding</span>}
+        </span>
+        {count !== undefined && size !== undefined && (
+          <span className="text-sm text-gray-600">
+            {count.toString()}/{size.toString()} committed
+          </span>
+        )}
+        <span className="mt-1 block font-mono text-[11px] text-gray-400">{pot}</span>
+      </button>
+    </li>
   );
 }
 
@@ -405,19 +491,23 @@ function PotCard({
   const router = useRouter();
   const open = onOpen ?? ((a: string) => router.push(`/pot/${a}`));
   const { data } = useReadContracts({
-    contracts: (["title", "commitCount", "partySize", "state"] as const).map((functionName) => ({
-      address: pot,
-      abi: potAbi,
-      functionName,
-      chainId,
-    })),
+    contracts: (["title", "commitCount", "partySize", "state", "isPrivate"] as const).map(
+      (functionName) => ({
+        address: pot,
+        abi: potAbi,
+        functionName,
+        chainId,
+      })
+    ),
   });
-  const [title, count, size, state] = (data?.map((d) => d.result) ?? []) as [
+  const [title, count, size, state, priv] = (data?.map((d) => d.result) ?? []) as [
     string | undefined,
     bigint | undefined,
     bigint | undefined,
     number | undefined,
+    boolean | undefined,
   ];
+  if (priv) return null; // invite-only pots never appear in the public feed
   const pct =
     count !== undefined && size !== undefined && size > 0n
       ? `${(Number(count) / Number(size)) * 100}%`

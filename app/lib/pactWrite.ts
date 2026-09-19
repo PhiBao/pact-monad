@@ -36,17 +36,54 @@ export async function passkeyCreatePot(
     deadline: bigint;
     payee: `0x${string}`;
     title: string;
+    isPrivate?: boolean;
+    secretHash?: `0x${string}`;
   },
   chainId: number
 ) {
   const s = passkeySession();
   if (!s) throw new Error("no passkey session");
   const wallet = walletFor(s.session, chainId);
+  if (args.isPrivate) {
+    return wallet.writeContract({
+      address: factory,
+      abi: factoryAbi,
+      functionName: "createPot",
+      args: [
+        args.token,
+        args.perPerson,
+        args.partySize,
+        args.deadline,
+        args.payee,
+        args.title,
+        true,
+        args.secretHash!,
+      ],
+    });
+  }
   return wallet.writeContract({
     address: factory,
     abi: factoryAbi,
     functionName: "createPot",
     args: [args.token, args.perPerson, args.partySize, args.deadline, args.payee, args.title],
+  });
+}
+
+export async function passkeyCommitSecret(
+  pot: `0x${string}`,
+  value: bigint,
+  secret: `0x${string}`,
+  chainId: number
+) {
+  const s = passkeySession();
+  if (!s) throw new Error("no passkey session");
+  const wallet = walletFor(s.session, chainId);
+  return wallet.writeContract({
+    address: pot,
+    abi: potAbi,
+    functionName: "commitWithSecret",
+    args: [secret],
+    value,
   });
 }
 

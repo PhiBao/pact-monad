@@ -173,6 +173,67 @@ contract PactTest is Test {
         assertEq(pot.title(), "Test pot");
     }
 
+    function _privatePot() internal returns (PactPot, bytes memory secret) {
+        secret = abi.encodePacked("invite-only-secret-123");
+        bytes32 h = keccak256(secret);
+        vm.prank(organizer);
+        address addr = factory.createPot(
+            address(0), 1 ether, 3, block.timestamp + 7 days, organizer, "Private cabin", true, h
+        );
+        return (PactPot(addr), secret);
+    }
+
+    function test_private_commit_without_secret_reverts() public {
+        (PactPot pot,) = _privatePot();
+        vm.prank(alice);
+        vm.expectRevert(PactPot.PrivateUseSecret.selector);
+        pot.commit{value: 1 ether}();
+    }
+
+    function test_private_wrong_secret_reverts() public {
+        (PactPot pot,) = _privatePot();
+        vm.prank(alice);
+        vm.expectRevert(PactPot.BadSecret.selector);
+        pot.commitWithSecret{value: 1 ether}(abi.encodePacked("wrong"));
+    }
+
+    function test_private_full_flow_with_secret() public {
+        (PactPot pot, bytes memory secret) = _privatePot();
+        assertTrue(pot.isPrivate());
+        vm.prank(alice);
+        pot.commitWithSecret{value: 1 ether}(secret);
+        vm.prank(bob);
+        pot.commitWithSecret{value: 1 ether}(secret);
+        vm.prank(cara);
+        pot.commitWithSecret{value: 1 ether}(secret);
+        assertEq(pot.commitCount(), 3);
+
+        uint256 feeBps = factory.feeBps();
+        uint256 before = organizer.balance;
+        vm.prank(alice);
+        pot.release();
+        assertEq(organizer.balance - before, 3 ether - (3 ether * feeBps) / 10_000);
+    }
+
+    function test_private_needs_secret_hash() public {
+        vm.prank(organizer);
+        vm.expectRevert(PactFactory.BadParams.selector);
+        factory.createPot(
+            address(0), 1 ether, 3, block.timestamp + 7 days, organizer, "No hash", true, bytes32(0)
+        );
+    }
+
+    function test_public_pot_still_uses_plain_commit() public {
+        PactPot pot = _nativePot(1 ether, 2);
+        assertFalse(pot.isPrivate());
+        vm.prank(alice);
+        pot.commit{value: 1 ether}();
+        vm.prank(bob);
+        pot.commit{value: 1 ether}();
+        pot.release();
+        assertEq(uint256(uint8(pot.state())), uint256(uint8(PactPot.State.Tilted)));
+    }
+
     function test_pots_are_independent() public {
         PactPot p1 = _nativePot(1 ether, 2);
         PactPot p2 = _nativePot(2 ether, 2);

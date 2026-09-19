@@ -6,7 +6,8 @@ import { useMera } from "../../../lib/mera-context";
 import { ChainGuard } from "../../../components/ChainGuard";
 import DynamicLogin from "../../../components/DynamicLogin";
 import { dynamicEnabled } from "../../../lib/wagmi";
-import { passkeyApprove, passkeyCommit, passkeyCall } from "../../../lib/pactWrite";
+import { passkeyApprove, passkeyCommit, passkeyCommitSecret, passkeyCall } from "../../../lib/pactWrite";
+import { secretFromUrl, shareUrl } from "../../../lib/inviteSecret";
 import { useWalletGuard } from "../../../lib/walletGuard";
 import { scorePotLegit } from "../../../lib/assist";
 
@@ -58,7 +59,7 @@ import { chainFor } from "../../../lib/monad";
 const ZERO = "0x0000000000000000000000000000000000000000";
 
 function usePot(address: `0x${string}`, chainId: AppChainId) {
-  const c = (functionName: "state" | "commitCount" | "partySize" | "perPerson" | "deadline" | "token" | "payee" | "contributors" | "title") =>
+  const c = (functionName: "state" | "commitCount" | "partySize" | "perPerson" | "deadline" | "token" | "payee" | "contributors" | "title" | "isPrivate") =>
     ({ address, abi: potAbi, functionName, chainId }) as const;
   return useReadContracts({
     contracts: [
@@ -71,6 +72,7 @@ function usePot(address: `0x${string}`, chainId: AppChainId) {
       c("payee"),
       c("contributors"),
       c("title"),
+      c("isPrivate"),
     ],
     query: { refetchInterval: 2000 },
   });
@@ -134,10 +136,25 @@ export default function PotPage({ params }: { params: Promise<{ address: string 
     query: { enabled: !!viewer },
   });
 
+  const [inviteSecret, setInviteSecret] = useState<`0x${string}` | null>(null);
+  useEffect(() => {
+    setInviteSecret(secretFromUrl());
+  }, [pot]);
   if (!data) return <main className="p-8">Loading pot…</main>;
-  const [state, count, size, perPerson, deadline, token, payee, contributors, potTitle] = data.map(
-    (d) => d.result
-  ) as [number, bigint, bigint, bigint, bigint, string, string, string[], string];
+  const [state, count, size, perPerson, deadline, token, payee, contributors, potTitle, priv] =
+    data.map((d) => d.result) as [
+      number,
+      bigint,
+      bigint,
+      bigint,
+      bigint,
+      string,
+      string,
+      string[],
+      string,
+      boolean,
+    ];
+  const locked = !!priv;
 
   const full = count >= size;
   const expired = Date.now() / 1000 >= Number(deadline);
@@ -159,7 +176,10 @@ export default function PotPage({ params }: { params: Promise<{ address: string 
       <a href="/" className="text-sm underline">
         ← all pots
       </a>
-      <h1 className="mt-2 text-3xl font-black">{potTitle || "Untitled pot"}</h1>
+      <h1 className="mt-2 text-3xl font-black">
+        {locked && <span title="Invite-only">🔒 </span>}
+        {potTitle || "Untitled pot"}
+      </h1>
       <p className="font-mono text-xs text-gray-500 break-all">{pot}</p>
       <p className="mt-1 text-sm">
         Status: <strong>{stateLabel}</strong>
@@ -235,19 +255,41 @@ export default function PotPage({ params }: { params: Promise<{ address: string 
         ) : state === 0 && !full && !expired ? (
           myCommitted ? (
             <p className="font-semibold text-emerald-800">You&apos;re in ✓ — share the link to fill the rest.</p>
+          ) : locked && !inviteSecret ? (
+            <p className="text-sm text-amber-800">
+              🔒 This is an invite-only pot. Ask the organizer for the invite link — open
+              commits are rejected onchain.
+            </p>
           ) : isNative ? (
             <button
               onClick={() =>
                 meraAddr
-                  ? pk(() => passkeyCommit(pot, perPerson, viewedId))
+                  ? pk(() =>
+                      inviteSecret
+                        ? passkeyCommitSecret(pot, perPerson, inviteSecret, viewedId)
+                        : passkeyCommit(pot, perPerson, viewedId)
+                    )
                   : act(() =>
-                      writeContract({ address: pot, abi: potAbi, functionName: "commit", value: perPerson })
+                      inviteSecret
+                        ? writeContract({
+                            address: pot,
+                            abi: potAbi,
+                            functionName: "commitWithSecret",
+                            args: [inviteSecret],
+                            value: perPerson,
+                          })
+                        : writeContract({
+                            address: pot,
+                            abi: potAbi,
+                            functionName: "commit",
+                            value: perPerson,
+                          })
                     )
               }
               disabled={isPending || pkBusy || checking}
               className="rounded-xl bg-emerald-900 px-6 py-3 font-semibold text-white disabled:opacity-50"
             >
-              {isPending || pkBusy || checking ? "Committing…" : `Commit ${formatEther(perPerson)} MON`}
+                {isPending || pkBusy || checking ? "Committing…" : `Commit ${formatEther(perPerson)} MON`}
             </button>
           ) : (
             <Erc20Commit
@@ -255,6 +297,7 @@ export default function PotPage({ params }: { params: Promise<{ address: string 
               token={token as `0x${string}`}
               perPerson={perPerson}
               chainId={viewedId}
+              secret={locked ? inviteSecret : null}
               viaPasskey={!!meraAddr}
               pk={pk}
             />
@@ -316,7 +359,7 @@ export default function PotPage({ params }: { params: Promise<{ address: string 
       {/* Share */}
       <div className="mt-4 rounded-2xl border bg-white p-6 shadow-sm">
         <h2 className="font-bold">Share this pot</h2>
-        <ShareLink />
+        <ShareLink pot={pot} locked={locked} />
       </div>
     </main>
   );
@@ -327,6 +370,7 @@ function Erc20Commit({
   token,
   perPerson,
   chainId,
+  secret,
   viaPasskey,
   pk,
 }: {
@@ -334,6 +378,7 @@ function Erc20Commit({
   token: `0x${string}`;
   perPerson: bigint;
   chainId: AppChainId;
+  secret: `0x${string}` | null;
   viaPasskey: boolean;
   pk: (fn: () => Promise<`0x${string}`>) => Promise<void>;
 }) {
@@ -366,8 +411,21 @@ function Erc20Commit({
         );
   const commit = () =>
     viaPasskey
-      ? pk(() => passkeyCommit(pot, 0n, chainId))
-      : guard(() => writeContract({ address: pot, abi: potAbi, functionName: "commit" }));
+      ? pk(() =>
+          secret
+            ? passkeyCommitSecret(pot, 0n, secret, chainId)
+            : passkeyCommit(pot, 0n, chainId)
+        )
+      : guard(() =>
+          secret
+            ? writeContract({
+                address: pot,
+                abi: potAbi,
+                functionName: "commitWithSecret",
+                args: [secret],
+              })
+            : writeContract({ address: pot, abi: potAbi, functionName: "commit" })
+        );
   const busy = isPending || checking;
   return (
     <>
@@ -446,22 +504,32 @@ function ExpireRefund({
   );
 }
 
-function ShareLink() {
+function ShareLink({ pot, locked }: { pot: string; locked: boolean }) {
   const [copied, setCopied] = useState(false);
   if (typeof window === "undefined") return null;
-  const url = window.location.href;
+  const secret = locked ? secretFromUrl() : null;
+  const url = locked && secret ? shareUrl(pot, secret) : window.location.href.split("#")[0];
   return (
-    <div className="mt-2 flex gap-2">
-      <input readOnly value={url} className="w-full rounded-lg border px-3 py-2 font-mono text-xs" />
-      <button
-        onClick={() => {
-          navigator.clipboard.writeText(url);
-          setCopied(true);
-        }}
-        className="rounded-lg border px-4 py-2 text-sm font-semibold"
-      >
-        {copied ? "Copied ✓" : "Copy"}
-      </button>
+    <div className="mt-2">
+      {locked && (
+        <p className="mb-1 text-xs text-amber-800">
+          {secret
+            ? "🔑 This link carries the invite key — only share it with your group."
+            : "⚠️ Open this page from your own invite link before sharing: without the key fragment, the link won't admit anyone."}
+        </p>
+      )}
+      <div className="flex gap-2">
+        <input readOnly value={url} className="w-full rounded-lg border px-3 py-2 font-mono text-xs" />
+        <button
+          onClick={() => {
+            navigator.clipboard.writeText(url);
+            setCopied(true);
+          }}
+          className="rounded-lg border px-4 py-2 text-sm font-semibold"
+        >
+          {copied ? "Copied ✓" : "Copy"}
+        </button>
+      </div>
     </div>
   );
 }

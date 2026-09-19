@@ -15,6 +15,22 @@ export const factoryAbi = [
   },
   {
     type: "function",
+    name: "createPot",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "token", type: "address" },
+      { name: "perPerson", type: "uint256" },
+      { name: "partySize", type: "uint256" },
+      { name: "deadline", type: "uint256" },
+      { name: "payee", type: "address" },
+      { name: "title", type: "string" },
+      { name: "isPrivate", type: "bool" },
+      { name: "secretHash", type: "bytes32" },
+    ],
+    outputs: [{ name: "pot", type: "address" }],
+  },
+  {
+    type: "function",
     name: "potCount",
     stateMutability: "view",
     inputs: [],
@@ -53,6 +69,7 @@ export const factoryAbi = [
       { name: "partySize", type: "uint256", indexed: false },
       { name: "deadline", type: "uint256", indexed: false },
       { name: "title", type: "string", indexed: false },
+      { name: "isPrivate", type: "bool", indexed: false },
     ],
   },
 ] as const;
@@ -64,6 +81,20 @@ export const potAbi = [
     stateMutability: "payable",
     inputs: [],
     outputs: [],
+  },
+  {
+    type: "function",
+    name: "commitWithSecret",
+    stateMutability: "payable",
+    inputs: [{ name: "secret", type: "bytes" }],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "isPrivate",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ type: "bool" }],
   },
   {
     type: "function",
