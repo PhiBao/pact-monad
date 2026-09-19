@@ -21,6 +21,7 @@ import { useMera } from "../lib/mera-context";
 import { ChainGuard, useWrongChain } from "../components/ChainGuard";
 import { dynamicEnabled } from "../lib/wagmi";
 import { parsePotText, type PotProposal } from "../lib/assist";
+import VisibilityBadge from "../components/VisibilityBadge";
 import { potFromReceipt } from "../lib/potFromReceipt";
 import { newSecret, secretHash } from "../lib/inviteSecret";
 import { useWalletGuard } from "../lib/walletGuard";
@@ -45,6 +46,7 @@ export default function Home() {
   const [parsing, setParsing] = useState(false);
   const [isPrivate, setIsPrivate] = useState(false);
   const [secret, setSecret] = useState<`0x${string}` | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
 
   const describe = async () => {
     if (nlText.trim().length < 4) return;
@@ -167,8 +169,18 @@ export default function Home() {
           )}
         </div>
       ) : (
-        <section className="mt-8 rounded-2xl border bg-white p-6 shadow-sm">
-          <h2 className="text-xl font-bold">Start a pot</h2>
+        <>
+          <div className="mt-8">
+            <button
+              onClick={() => setShowCreate((v) => !v)}
+              className="rounded-xl bg-emerald-900 px-6 py-3 font-semibold text-white"
+            >
+              {showCreate ? "Close" : "＋ Create a pot"}
+            </button>
+          </div>
+          {showCreate && (
+          <section className="mt-4 rounded-2xl border bg-white p-6 shadow-sm">
+            <h2 className="text-xl font-bold">Start a pot</h2>
           <div className="mt-4 rounded-xl bg-emerald-50 p-4">
             <label className="grid gap-2 text-sm">
               Describe it in one sentence — we fill the form
@@ -311,7 +323,9 @@ export default function Home() {
               </p>
             )}
           </div>
-        </section>
+          </section>
+          )}
+        </>
       )}
 
       <section className="mt-10">
@@ -325,8 +339,11 @@ export default function Home() {
 
       <section className="mt-8">
         <h2 className="text-xl font-bold">
-          Recent pots {potCount !== undefined ? `(${potCount.toString()})` : ""}
+          Recent public pots {potCount !== undefined ? `(${potCount.toString()} total)` : ""}
         </h2>
+        <p className="mt-1 text-xs text-gray-600">
+          Invite-only pots never appear here — only their organizers see them above.
+        </p>
         <RecentPots
           factory={factory}
           count={potCount}
@@ -401,16 +418,16 @@ function OwnPotCard({ pot, chainId }: { pot: `0x${string}`; chainId: 143 | 10143
   return (
     <li>
       <button
-        onClick={() => router.push(`/pot/${pot}`)}
+        onClick={() => open(pot)}
         className="w-full rounded-xl border bg-white px-4 py-3 text-left shadow-sm hover:border-emerald-900"
       >
         <span className="flex items-center justify-between gap-2">
-          <strong>
-            {priv && <span title="Invite-only">🔒 </span>}
-            {title ?? "Loading…"}
-          </strong>
-          {state === 1 && <span>🎉</span>}
-          {state === 2 && <span className="text-xs text-gray-500">refunding</span>}
+          <strong>{title ?? "Loading…"}</strong>
+          <span className="flex items-center gap-2">
+            {priv !== undefined && <VisibilityBadge isPrivate={priv} />}
+            {state === 1 && <span>🎉</span>}
+            {state === 2 && <span className="text-xs text-gray-500">refunding</span>}
+          </span>
         </span>
         {count !== undefined && size !== undefined && (
           <span className="text-sm text-gray-600">
@@ -520,8 +537,11 @@ function PotCard({
       >
         <span className="flex items-center justify-between gap-2">
           <strong>{title ?? "Loading…"}</strong>
-          {state === 1 && <span>🎉</span>}
-          {state === 2 && <span className="text-xs text-gray-500">refunding</span>}
+          <span className="flex items-center gap-2">
+            <VisibilityBadge isPrivate={false} />
+            {state === 1 && <span>🎉</span>}
+            {state === 2 && <span className="text-xs text-gray-500">refunding</span>}
+          </span>
         </span>
         {count !== undefined && size !== undefined && (
           <>

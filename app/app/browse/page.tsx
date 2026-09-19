@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePublicClient, useReadContract, useReadContracts } from "wagmi";
 import { useAppChain } from "../../lib/app-chain";
+import VisibilityBadge from "../../components/VisibilityBadge";
 import { factoryAbi, potAbi } from "../../lib/abi";
 
 type Card = {
@@ -130,8 +131,11 @@ export default function Browse() {
               >
                 <span className="flex items-center justify-between gap-2">
                   <strong>{c.title}</strong>
-                  {c.state === 1 && <span>🎉</span>}
-                  {c.state === 2 && <span className="text-xs text-gray-500">refunding</span>}
+                  <span className="flex items-center gap-2">
+                    <VisibilityBadge isPrivate={false} />
+                    {c.state === 1 && <span>🎉</span>}
+                    {c.state === 2 && <span className="text-xs text-gray-500">refunding</span>}
+                  </span>
                 </span>
                 <span className="text-sm text-gray-600">
                   {c.count.toString()}/{c.size.toString()} committed

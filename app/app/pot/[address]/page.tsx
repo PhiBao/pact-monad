@@ -2,6 +2,7 @@
 
 import { use, useEffect, useState } from "react";
 import PasskeyConnect from "../../../components/PasskeyConnect";
+import VisibilityBadge from "../../../components/VisibilityBadge";
 import { useMera } from "../../../lib/mera-context";
 import { ChainGuard } from "../../../components/ChainGuard";
 import DynamicLogin from "../../../components/DynamicLogin";
@@ -176,10 +177,10 @@ export default function PotPage({ params }: { params: Promise<{ address: string 
       <a href="/" className="text-sm underline">
         ← all pots
       </a>
-      <h1 className="mt-2 text-3xl font-black">
-        {locked && <span title="Invite-only">🔒 </span>}
-        {potTitle || "Untitled pot"}
-      </h1>
+      <h1 className="mt-2 text-3xl font-black">{potTitle || "Untitled pot"}</h1>
+      <p className="mt-1">
+        <VisibilityBadge isPrivate={locked} />
+      </p>
       <p className="font-mono text-xs text-gray-500 break-all">{pot}</p>
       <p className="mt-1 text-sm">
         Status: <strong>{stateLabel}</strong>
