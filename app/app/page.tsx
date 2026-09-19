@@ -403,14 +403,25 @@ function YourPots({
       // NOTE: this signature must match the factory's PotCreated event exactly
       // (topic0 is the full signature hash) — a stale field list silently
       // matches nothing, which once made organizer pots vault-only.
+      const POT_CREATED = parseAbiItem(
+        "event PotCreated(address indexed pot, address indexed organizer, address indexed payee, address token, uint256 perPerson, uint256 partySize, uint256 deadline, string title, bool isPrivate)"
+      );
+      // Public RPCs cap eth_getLogs at ~100 blocks per call — one big range
+      // fails outright, so the scan walks forward in small windows.
       const fetchOrganized = () =>
-        client.getLogs({
-          address: factory,
-          event: parseAbiItem(
-            "event PotCreated(address indexed pot, address indexed organizer, address indexed payee, address token, uint256 perPerson, uint256 partySize, uint256 deadline, string title, bool isPrivate)"
-          ),
-          args: { organizer: viewer },
-          fromBlock: deployBlock,
+        client.getBlockNumber().then((latest) => {
+          if (latest < deployBlock) return [];
+          const spans: [bigint, bigint][] = [];
+          const STEP = 100n;
+          for (let from = deployBlock; from <= latest; from += STEP) {
+            const to = from + STEP - 1n > latest ? latest : from + STEP - 1n;
+            spans.push([from, to]);
+          }
+          return Promise.all(
+            spans.map(([fromBlock, toBlock]) =>
+              client.getLogs({ address: factory, event: POT_CREATED, args: { organizer: viewer }, fromBlock, toBlock })
+            )
+          ).then((pages) => pages.flat());
         });
       fetchOrganized()
         .catch(() => fetchOrganized()) // one retry: a single RPC hiccup must not blank Your pots
