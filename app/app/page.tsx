@@ -383,9 +383,12 @@ function YourPots({
   const [vaultTick, setVaultTick] = useState(0);
   useEffect(() => {
     const load = async () => {
-      // Union of onchain-organized pots and the device vault (joined/visited
-      // pots, and anything created while a scan was unavailable).
-      const vaulted = vaultPots(chainId).map((v) => v.addr);
+      // Union of onchain-organized pots and the device vault — but only pots
+      // you organize or joined. Merely *visiting* a pot vaults its invite key
+      // for later, it must never promote the pot into Your pots.
+      const vaulted = vaultPots(chainId)
+        .filter((v) => v.entry.role !== "visited")
+        .map((v) => v.addr);
       if (!client || !viewer) {
         setMine(vaulted);
         return;
@@ -615,10 +618,15 @@ function PublicFeed({
       });
   }, [client, history, chainId]);
 
-  const FIELDS = ["title", "commitCount", "partySize", "state", "isPrivate", "perPerson", "token", "organizer"] as const;
+  const who = (viewer ?? ZERO) as `0x${string}`;
+  const FIELDS = ["title", "commitCount", "partySize", "state", "isPrivate", "perPerson", "token", "organizer", "committed"] as const;
   const { data } = useReadContracts({
     contracts: addrs.flatMap((a) =>
-      FIELDS.map((functionName) => ({ address: a as `0x${string}`, abi: potAbi, functionName, chainId }))
+      FIELDS.map((functionName) =>
+        functionName === "committed"
+          ? { address: a as `0x${string}`, abi: potAbi, functionName, args: [who], chainId }
+          : { address: a as `0x${string}`, abi: potAbi, functionName, chainId }
+      )
     ),
     query: { enabled: addrs.length > 0 },
   });
@@ -636,10 +644,13 @@ function PublicFeed({
         bigint | undefined,
         string | undefined,
         string | undefined,
+        boolean | undefined,
       ];
       if (r[4]) continue; // invite-only stays out of the public feed
-      // Your own pots live in Your pots — Public is for discovery, not duplicates.
+      // Pots you organize or joined live in Your pots — Public is for
+      // discovery, never duplicates.
       if (viewer && typeof r[7] === "string" && r[7].toLowerCase() === viewer.toLowerCase()) continue;
+      if (viewer && r[8] === true) continue;
       const size = r[2] ?? 0n;
       out.push({
         addr: addrs[i],
