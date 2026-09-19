@@ -9,6 +9,7 @@ import DynamicLogin from "../../../components/DynamicLogin";
 import { dynamicEnabled } from "../../../lib/wagmi";
 import { passkeyApprove, passkeyCommit, passkeyCommitSecret, passkeyCall } from "../../../lib/pactWrite";
 import { secretFromUrl, shareUrl } from "../../../lib/inviteSecret";
+import { rememberPot, vaultEntry } from "../../../lib/potVault";
 import { useWalletGuard } from "../../../lib/walletGuard";
 import { scorePotLegit } from "../../../lib/assist";
 
@@ -136,11 +137,19 @@ export default function PotPage({ params }: { params: Promise<{ address: string 
     chainId: viewedId,
     query: { enabled: !!viewer },
   });
+  useEffect(() => {
+    if (myCommitted) rememberPot(viewedId, pot, { role: "member" });
+  }, [myCommitted, pot, viewedId]);
 
   const [inviteSecret, setInviteSecret] = useState<`0x${string}` | null>(null);
   useEffect(() => {
-    setInviteSecret(secretFromUrl());
-  }, [pot]);
+    // URL key wins (fresh invite); otherwise recover this device's stored key.
+    // Either way the visit is vaulted so the pot stays re-findable.
+    const fromUrl = secretFromUrl();
+    const fromVault = vaultEntry(viewedId, pot)?.secret ?? null;
+    setInviteSecret(fromUrl ?? fromVault);
+    rememberPot(viewedId, pot, fromUrl ? { secret: fromUrl } : {});
+  }, [pot, viewedId]);
   if (!data) return <main className="p-8">Loading pot…</main>;
   const [state, count, size, perPerson, deadline, token, payee, contributors, potTitle, priv] =
     data.map((d) => d.result) as [
@@ -156,6 +165,10 @@ export default function PotPage({ params }: { params: Promise<{ address: string 
       boolean,
     ];
   const locked = !!priv;
+  useEffect(() => {
+    if (potTitle) rememberPot(viewedId, pot, { title: potTitle });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [potTitle]);
 
   const full = count >= size;
   const expired = Date.now() / 1000 >= Number(deadline);
@@ -360,7 +373,7 @@ export default function PotPage({ params }: { params: Promise<{ address: string 
       {/* Share */}
       <div className="mt-4 rounded-2xl border bg-white p-6 shadow-sm">
         <h2 className="font-bold">Share this pot</h2>
-        <ShareLink pot={pot} locked={locked} />
+        <ShareLink pot={pot} locked={locked} secret={inviteSecret} />
       </div>
     </main>
   );
@@ -505,10 +518,17 @@ function ExpireRefund({
   );
 }
 
-function ShareLink({ pot, locked }: { pot: string; locked: boolean }) {
+function ShareLink({
+  pot,
+  locked,
+  secret,
+}: {
+  pot: string;
+  locked: boolean;
+  secret: `0x${string}` | null;
+}) {
   const [copied, setCopied] = useState(false);
   if (typeof window === "undefined") return null;
-  const secret = locked ? secretFromUrl() : null;
   const url = locked && secret ? shareUrl(pot, secret) : window.location.href.split("#")[0];
   return (
     <div className="mt-2">

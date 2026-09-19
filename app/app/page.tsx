@@ -22,6 +22,7 @@ import { ChainGuard, useWrongChain } from "../components/ChainGuard";
 import { dynamicEnabled } from "../lib/wagmi";
 import { parsePotText, type PotProposal } from "../lib/assist";
 import VisibilityBadge from "../components/VisibilityBadge";
+import { forgetPot, rememberPot, vaultEntry, vaultPots } from "../lib/potVault";
 import { potFromReceipt } from "../lib/potFromReceipt";
 import { newSecret, secretHash } from "../lib/inviteSecret";
 import { useWalletGuard } from "../lib/walletGuard";
@@ -82,6 +83,12 @@ export default function Home() {
     if (!receipt || !factory) return;
     const pot = potFromReceipt(receipt, factory);
     if (pot) {
+      // Vault it immediately: even if the redirect is interrupted, the pot
+      // (and its invite key) stays re-findable in Your pots.
+      rememberPot(appChainId, pot, {
+        role: "organizer",
+        ...(isPrivate && secret ? { secret } : {}),
+      });
       setRedirecting(true);
       router.push(isPrivate && secret ? `/pot/${pot}#s=${secret}` : `/pot/${pot}`);
     } else {
@@ -365,40 +372,67 @@ function YourPots({
 }) {
   const client = usePublicClient({ chainId });
   const [mine, setMine] = useState<string[]>([]);
+  const [vaultTick, setVaultTick] = useState(0);
   useEffect(() => {
-    if (!client || !viewer) {
-      setMine([]);
-      return;
-    }
-    client
-      .getLogs({
-        address: factory,
-        event: parseAbiItem(
-          "event PotCreated(address indexed pot, address indexed organizer, address indexed payee, address token, uint256 perPerson, uint256 partySize, uint256 deadline, string title)"
-        ),
-        args: { organizer: viewer },
-        fromBlock: deployBlock,
-      })
-      .then((ls) =>
-        setMine([...new Set(ls.map((l) => (l.args as unknown as { pot: string }).pot))].reverse())
-      )
-      .catch(() => setMine([]));
-  }, [client, factory, viewer, deployBlock]);
+    const load = () => {
+      // Union of onchain-organized pots and the device vault (joined/visited
+      // pots, and anything created while a scan was unavailable).
+      const vaulted = vaultPots(chainId).map((v) => v.addr);
+      if (!client || !viewer) {
+        setMine(vaulted);
+        return;
+      }
+      client
+        .getLogs({
+          address: factory,
+          event: parseAbiItem(
+            "event PotCreated(address indexed pot, address indexed organizer, address indexed payee, address token, uint256 perPerson, uint256 partySize, uint256 deadline, string title)"
+          ),
+          args: { organizer: viewer },
+          fromBlock: deployBlock,
+        })
+        .then((ls) => {
+          const scanned = ls.map((l) => (l.args as unknown as { pot: string }).pot.toLowerCase());
+          setMine([...new Set([...scanned, ...vaulted])].reverse());
+        })
+        .catch(() => setMine(vaulted));
+    };
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client, factory, viewer, deployBlock, chainId, vaultTick]);
   if (!viewer || mine.length === 0) return null;
   return (
     <>
       <h2 className="text-xl font-bold">Your pots ({mine.length})</h2>
       <ul className="mt-3 grid gap-2">
         {mine.map((a) => (
-          <OwnPotCard key={a} pot={a as `0x${string}`} chainId={chainId} />
+          <OwnPotCard
+            key={a}
+            pot={a as `0x${string}`}
+            chainId={chainId}
+            onForget={() => {
+              forgetPot(chainId, a);
+              setVaultTick((t) => t + 1);
+            }}
+          />
         ))}
       </ul>
     </>
   );
 }
 
-function OwnPotCard({ pot, chainId }: { pot: `0x${string}`; chainId: 143 | 10143 }) {
+function OwnPotCard({
+  pot,
+  chainId,
+  onForget,
+}: {
+  pot: `0x${string}`;
+  chainId: 143 | 10143;
+  onForget: () => void;
+}) {
   const router = useRouter();
+  const [copied, setCopied] = useState(false);
+  const stored = vaultEntry(chainId, pot);
   const { data } = useReadContracts({
     contracts: (["title", "commitCount", "partySize", "state", "isPrivate"] as const).map(
       (functionName) => ({ address: pot, abi: potAbi, functionName, chainId })
@@ -411,14 +445,21 @@ function OwnPotCard({ pot, chainId }: { pot: `0x${string}`; chainId: 143 | 10143
     number | undefined,
     boolean | undefined,
   ];
+  const open = () => {
+    // Re-attach the stored invite key so private pots open ready to commit.
+    router.push(priv && stored?.secret ? `/pot/${pot}#s=${stored.secret}` : `/pot/${pot}`);
+  };
+  const copyInvite = () => {
+    if (!stored?.secret || typeof window === "undefined") return;
+    navigator.clipboard.writeText(`${window.location.origin}/pot/${pot}#s=${stored.secret}`);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
   return (
-    <li>
-      <button
-        onClick={() => open(pot)}
-        className="w-full rounded-xl border bg-white px-4 py-3 text-left shadow-sm hover:border-emerald-900"
-      >
+    <li className="rounded-xl border bg-white px-4 py-3 shadow-sm">
+      <button onClick={open} className="block w-full text-left">
         <span className="flex items-center justify-between gap-2">
-          <strong>{title ?? "Loading…"}</strong>
+          <strong>{title ?? stored?.title ?? "Loading…"}</strong>
           <span className="flex items-center gap-2">
             {priv !== undefined && <VisibilityBadge isPrivate={priv} />}
             {state === 1 && <span>🎉</span>}
@@ -432,6 +473,16 @@ function OwnPotCard({ pot, chainId }: { pot: `0x${string}`; chainId: 143 | 10143
         )}
         <span className="mt-1 block font-mono text-[11px] text-gray-400">{pot}</span>
       </button>
+      <span className="mt-1 flex gap-3 text-xs">
+        {priv && stored?.secret && (
+          <button onClick={copyInvite} className="font-semibold text-emerald-900 underline">
+            {copied ? "Invite link copied ✓" : "Copy invite link"}
+          </button>
+        )}
+        <button onClick={onForget} className="text-gray-400 underline">
+          Hide
+        </button>
+      </span>
     </li>
   );
 }
