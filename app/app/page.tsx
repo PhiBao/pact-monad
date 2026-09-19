@@ -345,13 +345,6 @@ export default function Home() {
       </section>
 
       <section className="mt-8">
-        <h2 className="text-xl font-bold">
-          Public pots {potCount !== undefined ? `(${potCount.toString()} total)` : ""}
-        </h2>
-        <p className="mt-1 text-xs text-gray-600">
-          Anyone can join these. Invite-only pots never appear here — only their
-          organizers see them above.
-        </p>
         <PublicFeed factory={factory} count={potCount} chainId={appChainId} />
       </section>
     </main>
@@ -570,10 +563,24 @@ function PublicFeed({
     return true;
   });
 
-  if (n === 0) return <p className="mt-2 text-sm">No pots yet — start the first one.</p>;
+  if (n === 0)
+    return (
+      <div>
+        <h2 className="text-xl font-bold">Public pots</h2>
+        <p className="mt-2 text-sm">No pots yet — start the first one.</p>
+      </div>
+    );
 
   return (
     <div>
+      <h2 className="text-xl font-bold">
+        {/* Count is joinable public pots, not the raw factory total. */}
+        Public pots{data ? ` (${cards.length})` : ""}
+      </h2>
+      <p className="mt-1 text-xs text-gray-600">
+        Anyone can join these. Invite-only pots never appear here — they live in
+        their members&apos; Your pots.
+      </p>
       <div className="mt-3 flex gap-2">
         <input
           value={q}

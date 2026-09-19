@@ -185,6 +185,43 @@ export default function PotPage({ params }: { params: Promise<{ address: string 
     guard(fn);
   };
 
+  // Invite-only pots stay behind login: a stranger opening the link sees the
+  // gate, never the roster, progress, or actions. (Onchain data is public by
+  // nature; this is the product's access rule, not a cryptographic one.)
+  if (locked && !viewer) {
+    return (
+      <main className="mx-auto max-w-2xl px-6 py-12">
+        <a href="/" className="text-sm underline">
+          ← all pots
+        </a>
+        <h1 className="mt-2 text-3xl font-black">{potTitle || "Untitled pot"}</h1>
+        <p className="mt-1">
+          <VisibilityBadge isPrivate={true} />
+        </p>
+        <div className="mt-6 rounded-2xl border bg-white p-6 shadow-sm">
+          <p className="font-bold">🔒 This is an invite-only pot.</p>
+          <p className="mt-1 text-sm text-gray-600">
+            Log in to see its progress and take part. Only people with the invite
+            link can join.
+          </p>
+          <div className="mt-4 grid gap-4">
+            <PasskeyConnect />
+            {dynamicEnabled ? (
+              <DynamicLogin />
+            ) : (
+              <button
+                onClick={() => connect({ connector: connectors[0] })}
+                className="rounded-xl border px-6 py-3 font-semibold"
+              >
+                Use a wallet app
+              </button>
+            )}
+          </div>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="mx-auto max-w-2xl px-6 py-12">
       <a href="/" className="text-sm underline">
