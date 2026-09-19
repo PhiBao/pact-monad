@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, ReactNode, useContext, useState } from "react";
-import { monadMainnet, monadTestnet, chainFor, factoryFor, deployBlockFor } from "./monad";
+import { monadMainnet, monadTestnet, chainFor, factoryFor, factoryHistoryFor, deployBlockFor } from "./monad";
 
 export type AppChainId = 143 | 10143;
 
@@ -41,6 +41,7 @@ export function useAppChain() {
     chain: chainFor(appChainId),
     factory: factoryFor(appChainId),
     deployBlock: deployBlockFor(appChainId),
+    history: factoryHistoryFor(appChainId),
     isMainnet: appChainId === monadMainnet.id,
     testnet: monadTestnet,
     mainnet: monadMainnet,

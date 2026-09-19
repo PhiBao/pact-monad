@@ -166,10 +166,16 @@ export default function PotPage({ params }: { params: Promise<{ address: string 
       boolean,
     ];
   const locked = !!priv;
+  // Pre-title pots (v1) have no title() — fall back to stake × size.
+  const displayTitle =
+    potTitle ||
+    (perPerson !== undefined && size !== undefined
+      ? `${formatEther(perPerson)} ${token === ZERO ? "MON" : "tokens"} × ${size.toString()}`
+      : "");
   useEffect(() => {
-    if (potTitle) rememberPot(viewedId, pot, { title: potTitle });
+    if (displayTitle) rememberPot(viewedId, pot, { title: displayTitle });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [potTitle]);
+  }, [displayTitle]);
 
   const full = count >= size;
   const expired = Date.now() / 1000 >= Number(deadline);
@@ -195,7 +201,7 @@ export default function PotPage({ params }: { params: Promise<{ address: string 
         <Link href="/" className="text-sm underline">
           ← all pots
         </Link>
-        <h1 className="mt-2 text-3xl font-black">{potTitle || "Untitled pot"}</h1>
+        <h1 className="mt-2 text-3xl font-black">{displayTitle || "Loading pot…"}</h1>
         <p className="mt-1">
           <VisibilityBadge isPrivate={true} />
         </p>
@@ -228,7 +234,7 @@ export default function PotPage({ params }: { params: Promise<{ address: string 
       <Link href="/" className="text-sm underline">
         ← all pots
       </Link>
-      <h1 className="mt-2 text-3xl font-black">{potTitle || "Untitled pot"}</h1>
+      <h1 className="mt-2 text-3xl font-black">{displayTitle || "Loading pot…"}</h1>
       <p className="mt-1">
         <VisibilityBadge isPrivate={locked} />
       </p>
@@ -237,7 +243,7 @@ export default function PotPage({ params }: { params: Promise<{ address: string 
         Status: <strong>{stateLabel}</strong>
         <LegitBadge
           pot={pot}
-          title={potTitle}
+          title={displayTitle}
           perPerson={formatEther(perPerson)}
           size={size.toString()}
         />{" "}

@@ -6,12 +6,11 @@ import {
   useAccount,
   useConnect,
   usePublicClient,
-  useReadContract,
   useReadContracts,
   useWriteContract,
   useWaitForTransactionReceipt,
 } from "wagmi";
-import { isAddress, parseAbiItem, parseEther } from "viem";
+import { formatEther, isAddress, parseEther } from "viem";
 import { ausdAddress, POT_BOUNDS } from "../lib/monad";
 import { useAppChain } from "../lib/app-chain";
 import { factoryAbi, potAbi } from "../lib/abi";
@@ -31,7 +30,7 @@ const ZERO = "0x0000000000000000000000000000000000000000" as const;
 
 export default function Home() {
   const router = useRouter();
-  const { appChainId, factory, deployBlock } = useAppChain();
+  const { appChainId, factory } = useAppChain();
   const ausd = ausdAddress();
   const { address, isConnected } = useAccount();
   const { connect, connectors } = useConnect();
@@ -117,14 +116,6 @@ export default function Home() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [receipt]);
-
-  const { data: potCount } = useReadContract({
-    address: factory,
-    abi: factoryAbi,
-    functionName: "potCount",
-    chainId: appChainId,
-    query: { refetchInterval: 5000 },
-  });
 
   const create = async () => {
     const tokenAddr = (token === "AUSD" && ausd ? ausd : ZERO) as `0x${string}`;
@@ -361,38 +352,34 @@ export default function Home() {
       )}
 
       <section className="mt-10">
-        <YourPots
-          factory={factory}
-          viewer={(address ?? meraAddr) as `0x${string}` | undefined}
-          chainId={appChainId}
-          deployBlock={deployBlock}
-        />
+        <YourPots viewer={(address ?? meraAddr) as `0x${string}` | undefined} chainId={appChainId} />
       </section>
 
       <section className="mt-8">
-        <PublicFeed factory={factory} count={potCount} chainId={appChainId} />
+        <PublicFeed chainId={appChainId} />
       </section>
     </main>
   );
 }
 
-/** Pots organized by the connected wallet (via PotCreated event scan). */
+/**
+ * Pots organized by the connected wallet. Enumerates every factory generation
+ * (pot counts are tiny) and keeps organizers whose address matches — no event
+ * topics, no block-range limits, nothing to go stale on the next upgrade.
+ */
 function YourPots({
-  factory,
   viewer,
   chainId,
-  deployBlock,
 }: {
-  factory: `0x${string}`;
   viewer: `0x${string}` | undefined;
   chainId: 143 | 10143;
-  deployBlock: bigint;
 }) {
+  const { history } = useAppChain();
   const client = usePublicClient({ chainId });
   const [mine, setMine] = useState<string[]>([]);
   const [vaultTick, setVaultTick] = useState(0);
   useEffect(() => {
-    const load = () => {
+    const load = async () => {
       // Union of onchain-organized pots and the device vault (joined/visited
       // pots, and anything created while a scan was unavailable).
       const vaulted = vaultPots(chainId).map((v) => v.addr);
@@ -400,41 +387,47 @@ function YourPots({
         setMine(vaulted);
         return;
       }
-      // NOTE: this signature must match the factory's PotCreated event exactly
-      // (topic0 is the full signature hash) — a stale field list silently
-      // matches nothing, which once made organizer pots vault-only.
-      const POT_CREATED = parseAbiItem(
-        "event PotCreated(address indexed pot, address indexed organizer, address indexed payee, address token, uint256 perPerson, uint256 partySize, uint256 deadline, string title, bool isPrivate)"
-      );
-      // Public RPCs cap eth_getLogs at ~100 blocks per call — one big range
-      // fails outright, so the scan walks forward in small windows.
-      const fetchOrganized = () =>
-        client.getBlockNumber().then((latest) => {
-          if (latest < deployBlock) return [];
-          const spans: [bigint, bigint][] = [];
-          const STEP = 100n;
-          for (let from = deployBlock; from <= latest; from += STEP) {
-            const to = from + STEP - 1n > latest ? latest : from + STEP - 1n;
-            spans.push([from, to]);
+      try {
+        const found: string[] = [];
+        for (const f of history) {
+          const n = await client.readContract({
+            address: f.address,
+            abi: factoryAbi,
+            functionName: "potCount",
+          });
+          const total = Number(n);
+          for (let s = 0; s < total; s += 500) {
+            const idx = Array.from(
+              { length: Math.min(500, total - s) },
+              (_, i) => BigInt(s + i)
+            );
+            const addrs = (await Promise.all(
+              idx.map((i) =>
+                client.readContract({ address: f.address, abi: factoryAbi, functionName: "allPots", args: [i] })
+              )
+            )) as string[];
+            const orgs = await Promise.all(
+              addrs.map((a) =>
+                client
+                  .readContract({ address: a as `0x${string}`, abi: potAbi, functionName: "organizer" })
+                  .catch(() => null)
+              )
+            );
+            addrs.forEach((a, i) => {
+              if (typeof orgs[i] === "string" && orgs[i].toLowerCase() === viewer.toLowerCase())
+                found.push(a.toLowerCase());
+            });
           }
-          return Promise.all(
-            spans.map(([fromBlock, toBlock]) =>
-              client.getLogs({ address: factory, event: POT_CREATED, args: { organizer: viewer }, fromBlock, toBlock })
-            )
-          ).then((pages) => pages.flat());
-        });
-      fetchOrganized()
-        .catch(() => fetchOrganized()) // one retry: a single RPC hiccup must not blank Your pots
-        .then((ls) => {
-          const scanned = ls.map((l) => (l.args as unknown as { pot: string }).pot.toLowerCase());
-          const hidden = new Set(hiddenPots(chainId).map((h) => h.addr));
-          setMine([...new Set([...scanned, ...vaulted])].reverse().filter((a) => !hidden.has(a)));
-        })
-        .catch(() => setMine(vaulted));
+        }
+        const hidden = new Set(hiddenPots(chainId).map((h) => h.addr));
+        setMine([...new Set([...found, ...vaulted])].reverse().filter((a) => !hidden.has(a)));
+      } catch {
+        setMine(vaulted);
+      }
     };
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client, factory, viewer, deployBlock, chainId, vaultTick]);
+  }, [client, viewer, chainId, vaultTick]);
   const [showHidden, setShowHidden] = useState(false);
   const hidden = viewer ? hiddenPots(chainId) : [];
   if (!viewer || (mine.length === 0 && hidden.length === 0)) return null;
@@ -568,48 +561,56 @@ type FeedCard = {
   state: number;
 };
 
-/** The single public discovery feed: search + status filter over recent pots.
- *  Invite-only pots are excluded at the data layer, never rendered. */
-function PublicFeed({
-  factory,
-  count,
-  chainId,
-}: {
-  factory: `0x${string}`;
-  count: bigint | undefined;
-  chainId: 143 | 10143;
-}) {
+/** The single public discovery feed: search + status filter over every factory
+ *  generation. Invite-only pots are excluded at the data layer, never
+ *  rendered. Reads tolerate pre-title/pre-privacy pots (v1/v2) via fallbacks. */
+function PublicFeed({ chainId }: { chainId: 143 | 10143 }) {
   const router = useRouter();
-  const n = count === undefined ? 0 : Number(count);
+  const { history } = useAppChain();
   const [addrs, setAddrs] = useState<string[]>([]);
+  const [scanned, setScanned] = useState(false);
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<"all" | "filling" | "tilted">("all");
   const client = usePublicClient({ chainId });
 
   useEffect(() => {
-    if (!client || n === 0) {
+    if (!client) {
       setAddrs([]);
       return;
     }
-    const start = Math.max(0, n - 30);
-    const idx = Array.from({ length: n - start }, (_, i) => BigInt(start + i));
     Promise.all(
-      idx.map((i) =>
-        client.readContract({ address: factory, abi: factoryAbi, functionName: "allPots", args: [i] })
-      )
+      history.map(async (f) => {
+        try {
+          const n = Number(
+            await client.readContract({ address: f.address, abi: factoryAbi, functionName: "potCount" })
+          );
+          const start = Math.max(0, n - 500);
+          const idx = Array.from({ length: n - start }, (_, i) => BigInt(start + i));
+          return (await Promise.all(
+            idx.map((i) =>
+              client.readContract({ address: f.address, abi: factoryAbi, functionName: "allPots", args: [i] })
+            )
+          )) as string[];
+        } catch {
+          return [] as string[];
+        }
+      })
     )
-      .then((a) => setAddrs((a as string[]).reverse()))
-      .catch(() => setAddrs([]));
-  }, [client, factory, n]);
+      .then((pages) => {
+        setAddrs([...new Set(pages.flat())].reverse());
+        setScanned(true);
+      })
+      .catch(() => {
+        setAddrs([]);
+        setScanned(true);
+      });
+  }, [client, history, chainId]);
 
+  const FIELDS = ["title", "commitCount", "partySize", "state", "isPrivate", "perPerson", "token"] as const;
   const { data } = useReadContracts({
-    contracts: addrs.flatMap((a) => [
-      { address: a as `0x${string}`, abi: potAbi, functionName: "title", chainId },
-      { address: a as `0x${string}`, abi: potAbi, functionName: "commitCount", chainId },
-      { address: a as `0x${string}`, abi: potAbi, functionName: "partySize", chainId },
-      { address: a as `0x${string}`, abi: potAbi, functionName: "state", chainId },
-      { address: a as `0x${string}`, abi: potAbi, functionName: "isPrivate", chainId },
-    ]),
+    contracts: addrs.flatMap((a) =>
+      FIELDS.map((functionName) => ({ address: a as `0x${string}`, abi: potAbi, functionName, chainId }))
+    ),
     query: { enabled: addrs.length > 0 },
   });
 
@@ -617,19 +618,26 @@ function PublicFeed({
     if (!data) return [];
     const out: FeedCard[] = [];
     for (let i = 0; i < addrs.length; i++) {
-      const r = data.slice(i * 5, i * 5 + 5).map((d) => d.result) as [
+      const r = data.slice(i * FIELDS.length, i * FIELDS.length + FIELDS.length).map((d) => d.result) as [
         string | undefined,
         bigint | undefined,
         bigint | undefined,
         number | undefined,
         boolean | undefined,
+        bigint | undefined,
+        string | undefined,
       ];
       if (r[4]) continue; // invite-only stays out of the public feed
+      const size = r[2] ?? 0n;
       out.push({
         addr: addrs[i],
-        title: r[0] ?? "Untitled",
+        title:
+          r[0] ??
+          (r[5] !== undefined
+            ? `${formatEther(r[5])} ${r[6] === ZERO ? "MON" : "tokens"} × ${size.toString()}`
+            : "Group pot"),
         count: r[1] ?? 0n,
-        size: r[2] ?? 0n,
+        size,
         state: r[3] ?? 0,
       });
     }
@@ -643,7 +651,7 @@ function PublicFeed({
     return true;
   });
 
-  if (n === 0)
+  if (scanned && addrs.length === 0)
     return (
       <div>
         <h2 className="text-xl font-bold">Public pots</h2>
@@ -654,7 +662,7 @@ function PublicFeed({
   return (
     <div>
       <h2 className="text-xl font-bold">
-        {/* Count is joinable public pots, not the raw factory total. */}
+        {/* Count is joinable public pots, not any factory total. */}
         Public pots{data ? ` (${cards.length})` : ""}
       </h2>
       <p className="mt-1 text-xs text-gray-600">
