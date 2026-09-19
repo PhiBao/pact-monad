@@ -39,8 +39,8 @@ export function chainFor(chainId: number) {
 }
 
 const FACTORIES = {
-  [monadMainnet.id]: "0xEF673BDac2C86506874919b1ad05Bd7D7fa64344",
-  [monadTestnet.id]: "0x4f6aD063f1c20D53a4ea4FA1ba46A8783C782D16",
+  [monadMainnet.id]: "0x457ae4d9e8CC1bC6bf3babA9133D1fCe283a9ABE",
+  [monadTestnet.id]: "0xDFEcE74f0aDBa3cc18B065DBA0DEc82bE52AA830",
 } as const satisfies Record<number, `0x${string}`>;
 
 export function factoryFor(chainId: number): `0x${string}` {
@@ -48,8 +48,8 @@ export function factoryFor(chainId: number): `0x${string}` {
 }
 
 const DEPLOY_BLOCKS = {
-  [monadMainnet.id]: 105647209n,
-  [monadTestnet.id]: 63354945n,
+  [monadMainnet.id]: 106107408n,
+  [monadTestnet.id]: 63812803n,
 } as const satisfies Record<number, bigint>;
 
 /** Bounds getLogs scans for "your pots". */
