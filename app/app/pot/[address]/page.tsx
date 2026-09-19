@@ -1,6 +1,7 @@
 "use client";
 
 import { use, useEffect, useState } from "react";
+import Link from "next/link";
 import PasskeyConnect from "../../../components/PasskeyConnect";
 import VisibilityBadge from "../../../components/VisibilityBadge";
 import { useMera } from "../../../lib/mera-context";
@@ -191,9 +192,9 @@ export default function PotPage({ params }: { params: Promise<{ address: string 
   if (locked && !viewer) {
     return (
       <main className="mx-auto max-w-2xl px-6 py-12">
-        <a href="/" className="text-sm underline">
+        <Link href="/" className="text-sm underline">
           ← all pots
-        </a>
+        </Link>
         <h1 className="mt-2 text-3xl font-black">{potTitle || "Untitled pot"}</h1>
         <p className="mt-1">
           <VisibilityBadge isPrivate={true} />
@@ -224,9 +225,9 @@ export default function PotPage({ params }: { params: Promise<{ address: string 
 
   return (
     <main className="mx-auto max-w-2xl px-6 py-12">
-      <a href="/" className="text-sm underline">
+      <Link href="/" className="text-sm underline">
         ← all pots
-      </a>
+      </Link>
       <h1 className="mt-2 text-3xl font-black">{potTitle || "Untitled pot"}</h1>
       <p className="mt-1">
         <VisibilityBadge isPrivate={locked} />

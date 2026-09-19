@@ -98,11 +98,11 @@ export default function PasskeyConnect() {
         disabled={busy}
         className="rounded-xl bg-black px-6 py-3 font-semibold text-white disabled:opacity-50"
       >
-        {busy ? "Waiting for confirmation…" : "Continue with Face ID"}
+        {busy ? "Waiting for confirmation…" : known ? "Resume with Face ID" : "Continue with Face ID"}
       </button>
       <p className="mt-1 text-xs text-gray-600">
         {known
-          ? `Signs you back in with ${bioWord}.`
+          ? `One tap restores your session with ${bioWord} — same account, no seed phrase.`
           : `First time? Creates your ${bioWord} login automatically — no seed phrase, works on your other synced devices.`}
       </p>
       {!known && !busy && (
